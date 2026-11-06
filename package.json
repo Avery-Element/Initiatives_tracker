@@ -1,0 +1,25 @@
+{
+  "name": "initiatives-tracker",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "deploy": "vite build && npx --yes wrangler@4 deploy",
+    "test:db": "node tests/db/initiatives.test.mjs",
+    "test:email": "node --experimental-strip-types tests/functions/render.test.mts",
+    "test": "npm run test:db && npm run test:email"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.105.1",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
+    "@vitejs/plugin-react": "^6.0.1",
+    "vite": "^8.0.10"
+  }
+}

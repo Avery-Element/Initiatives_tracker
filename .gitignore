@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.env*
+!.env.example
+
+# Supabase CLI local cache
+supabase/.temp/
+
+# Local editor / Claude config
+.claude/
+
+# Wrangler local state
+.wrangler/
+
+# Email render samples (npm run test:email with WRITE_SAMPLES=1)
+tests/functions/samples/
