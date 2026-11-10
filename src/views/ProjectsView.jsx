@@ -67,8 +67,9 @@ export default function ProjectsView({ data, access, perms, onChanged, onError, 
       ) : (
         <div className="plist">
           {projects.map(p => (
-            <ProjectRow key={p.id} p={p} tasks={tasksByProject.get(p.id) || []} open={open.has(p.id) || !!personId || filter === "attention"}
+            <ProjectRow key={p.id} p={p} tasks={tasksByProject.get(p.id) || []} open={open.has(p.id) || (filter === "attention" && !personId)}
               onToggle={() => toggle(p.id)} matchTask={personId || filter === "attention" ? matchTask : null}
+              personName={personId ? (filter === "mine" ? "you" : data.assignable.find(x => x.id === personId)?.display_name) : null}
               today={today} perms={perms} people={data.assignable} onStatus={setStatus} openTask={openTask}
               onEdit={() => setEditing(p)} onChanged={onChanged} onError={onError} notify={notify} />
           ))}
@@ -80,7 +81,7 @@ export default function ProjectsView({ data, access, perms, onChanged, onError, 
   );
 }
 
-function ProjectRow({ p, tasks, open, onToggle, matchTask, today, perms, people, onStatus, openTask, onEdit, onChanged, onError, notify }) {
+function ProjectRow({ p, tasks, open, onToggle, matchTask, personName, today, perms, people, onStatus, openTask, onEdit, onChanged, onError, notify }) {
   const shown = matchTask ? tasks.filter(matchTask) : tasks;
   const canManage = perms.leads(p.id);
   const due = p.target_date
@@ -103,6 +104,7 @@ function ProjectRow({ p, tasks, open, onToggle, matchTask, today, perms, people,
           <div className="meta">
             <span>Lead: <b>{p.lead_name || "none"}</b></span>
             <Avatars names={p.team_names || []} />
+            {personName && <span className="wk"><b>{plural(shown.length, "task")}</b> for {personName}</span>}
             <span className={`wk${p.moved_this_week ? "" : " zero"}`}>
               {p.moved_this_week ? `${p.moved_this_week} updated this week` : p.task_count ? "No updates this week" : "No tasks yet"}
             </span>
