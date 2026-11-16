@@ -237,7 +237,7 @@ function EmailAdmin({ onError, notify }) {
 }
 
 // ── Activity log ────────────────────────────────────────────────
-const KIND_LABEL = { project_created: "created project", stage: "changed stage", project_edit: "edited project", archived: "archived", restored: "restored",
+const KIND_LABEL = { project_created: "created project", stage: "changed stage", project_edit: "edited project", leads: "changed leads", stakeholders: "changed stakeholders", archived: "archived", restored: "restored",
   task_created: "added task", status: "changed status", note: "added a note", assigned: "assigned", unassigned: "unassigned", due: "changed due date",
   title: "renamed task", blocked_on: "marked waiting on", task_deleted: "deleted task", person: "updated person", role: "changed role", signin: "signed in" };
 

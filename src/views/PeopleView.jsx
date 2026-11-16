@@ -4,7 +4,7 @@ import { plural } from "../lib.js";
 
 export default function PeopleView({ data, setPersonFilter, go }) {
   const colors = Object.fromEntries(data.projects.map(p => [p.code, p.color]));
-  const people = [...data.people].filter(p => p.open_count + p.done_count > 0 || p.lead_of?.length)
+  const people = [...data.people].filter(p => p.open_count + p.done_count > 0 || p.lead_of?.length || p.stakeholder_of?.length)
     .sort((a, b) => b.open_count - a.open_count || a.display_name.localeCompare(b.display_name));
   const idle = data.people.filter(p => !people.includes(p));
   const max = Math.max(1, ...people.map(p => p.open_count));
@@ -26,7 +26,7 @@ export default function PeopleView({ data, setPersonFilter, go }) {
                 aria-label={`${x.display_name}: show their tasks`}>
                 <div className="ph"><Avatar name={x.display_name} />
                   <div><div className="nm">{x.display_name}</div>
-                    <div className="small muted">{plural(x.project_codes.length, "project")}{x.lead_of?.length ? ` · leads ${x.lead_of.length}` : ""}{!x.user_id ? " · no login yet" : ""}</div></div>
+                    <div className="small muted">{plural(x.project_codes.length, "project")}{x.lead_of?.length ? ` · leads ${x.lead_of.length}` : ""}{x.stakeholder_of?.length ? ` · stakeholder on ${x.stakeholder_of.length}` : ""}{!x.user_id ? " · no login yet" : ""}</div></div>
                 </div>
                 <div className="headline">
                   <b className={pct === 0 ? "zero" : ""}>{pct == null ? "—" : `${pct}%`}</b>

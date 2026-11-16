@@ -33,7 +33,9 @@ Outside parties (Riverstone, Vital AI, James, Project Coordinators) are free tex
 init_settings        one row: time zone, email schedule, digest recipients, app URL
 init_user_roles      login → role (Initiatives Admin / Member / View Only)
 init_people          name, email, optional login link, active
-init_projects        code, name, summary, lead (person), stage, priority, target date, color
+init_projects        code, name, summary, stage, priority, target date, color
+init_project_leads   project ↔ person (any number of leads)
+init_project_stakeholders  project ↔ person (people involved; no extra rights)
 init_tasks           project, position, title, status, due date, blocked on, latest note, also involved
 init_task_assignees  task ↔ person (many-to-many)
 init_activity        every status change, note, assignment, date change, project stage change

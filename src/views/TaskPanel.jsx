@@ -1,5 +1,5 @@
 // Task details: status, what it's blocked on, notes and the full history.
-// People on the task can change the status and add notes. The project lead and admins can
+// People on the task can change the status and add notes. The project's leads and admins can
 // also edit the title, due date, assignees and "also involved", or delete the task.
 import { useState, useEffect, useCallback } from "react";
 import { updateTask, deleteTask, setAssignees, addNote, fetchTaskActivity } from "../supabase.js";
@@ -77,7 +77,7 @@ export default function TaskPanel({ task, data, perms, onClose, onChanged, onErr
       <div className="panelhead">
         <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
           <span className="small muted" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-            <Swatch color={task.project_color} small /> {task.project_name}{project?.lead_name ? ` · lead ${project.lead_name}` : ""}
+            <Swatch color={task.project_color} small /> {task.project_name}{project?.lead_name ? ` · ${project.lead_names.length > 1 ? "leads" : "lead"} ${project.lead_name}` : ""}
           </span>
           <h3>{task.title}</h3>
         </div>
@@ -104,7 +104,7 @@ export default function TaskPanel({ task, data, perms, onClose, onChanged, onErr
                 : <span>{task.blocked_on || "—"}</span>}
             </Field>
           )}
-          {!canUpdate && perms.canWrite && <p className="small muted">Only people on this task, the project lead and admins can update it.</p>}
+          {!canUpdate && perms.canWrite && <p className="small muted">Only people on this task, the project's leads and admins can update it.</p>}
           {canManage && (
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <button className="btn ghost sm" onClick={() => setEdit({ title: task.title, due_date: task.due_date || "", others: task.others || "", assignees: [...task.assignee_ids] })}>Edit task</button>

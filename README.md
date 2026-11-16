@@ -14,7 +14,7 @@ hosting. Design: Element green header, shaded summary tiles, a swatch color per 
 | Role | Can |
 |---|---|
 | Initiatives Admin | everything: projects, tasks, people, roles, email settings, send now |
-| Member | update status / "waiting on" / notes on tasks assigned to them; on projects they **lead**, add, edit, assign and delete tasks and set the stage |
+| Member | update status / "waiting on" / notes on tasks assigned to them; on projects they **lead** (a project can have several leads), add, edit, assign and delete tasks and set the stage |
 | View Only | read |
 
 The database enforces all of this (RLS + triggers that limit which columns each role may change).
@@ -56,12 +56,16 @@ runs hourly. Admins see the outbox and its errors under **Admin → Email**.
 2. `supabase/migrations/002_init_access.sql`: access + action RPCs
 3. `supabase/migrations/003_init_email.sql`: outbox, digest, reminders, schedule
 4. `supabase/migrations/004_init_hardening.sql`: function permissions, search_path
-5. Optional: `supabase/seed/001_lindsay_tracker_oct30.sql` loads the six projects from Lindsay's
+5. `supabase/migrations/005_init_project_people.sql`: several leads per project, plus stakeholders
+   (replaces `init_projects.lead_person`; existing leads carry over)
+6. Optional: `supabase/seed/001_lindsay_tracker_oct30.sql` loads the six projects from Lindsay's
    tracker (already loaded on the live project).
 
 The live project was migrated in steps (`init_001` … `init_005` in Supabase's migration list);
 two small follow-ups were folded back into 001 and 003, so running 001–004 fresh gives the
 same result.
+
+`005` was applied to the live project on Nov 16, 2026 as `init_006_project_people`.
 
 ### Email (to turn it on)
 

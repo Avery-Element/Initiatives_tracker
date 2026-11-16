@@ -62,6 +62,9 @@ export const fetchDigest = (weekStart) => rpc('init_digest', { p_week_start: wee
 export const saveProject = (id, fields) => id
   ? run(supabase.from('init_projects').update(fields).eq('id', id).select().single(), 'saveProject')
   : run(supabase.from('init_projects').insert(fields).select().single(), 'saveProject')
+// Admins: replace a project's leads and stakeholders
+export const setProjectPeople = (projectId, leadIds, stakeholderIds) =>
+  rpc('init_set_project_people', { p_project_id: projectId, p_lead_ids: leadIds, p_stakeholder_ids: stakeholderIds })
 
 // --- Tasks ---
 
@@ -103,12 +106,12 @@ export const fetchOutbox = () =>
 
 // --- Live updates ---
 
-// Calls onChange (debounced) when projects, tasks, assignments or people change
+// Calls onChange (debounced) when projects, leads, stakeholders, tasks, assignments or people change
 export function subscribeToChanges(onChange) {
   let timer = null
   const fire = () => { clearTimeout(timer); timer = setTimeout(onChange, 400) }
   const channel = supabase.channel('init-board')
-  for (const table of ['init_projects', 'init_tasks', 'init_task_assignees', 'init_people'])
+  for (const table of ['init_projects', 'init_project_leads', 'init_project_stakeholders', 'init_tasks', 'init_task_assignees', 'init_people'])
     channel.on('postgres_changes', { event: '*', schema: 'public', table }, fire)
   channel.subscribe(status => { if (status === 'CHANNEL_ERROR') console.error('Realtime channel error — live updates disabled') })
   return () => { clearTimeout(timer); supabase.removeChannel(channel) }

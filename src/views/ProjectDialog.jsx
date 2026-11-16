@@ -1,16 +1,36 @@
-// New / edit project. Admins edit everything; a project's lead can change its stage,
-// summary, priority and target date (the database enforces the same split).
+// New / edit project. Admins edit everything, including who leads it and who the stakeholders
+// are; a project's leads can change its stage, summary, priority and target date (the database
+// enforces the same split).
 import { useState } from "react";
-import { saveProject } from "../supabase.js";
+import { saveProject, setProjectPeople } from "../supabase.js";
 import { STATUSES, PRIORITIES, SWATCHES } from "../lib.js";
 import { Dialog, Field } from "./common.jsx";
+
+// Pick any number of people; `exclude` hides people already picked elsewhere
+function PeoplePicker({ id, people, value, onChange, exclude = [] }) {
+  const shown = people.filter(p => !exclude.includes(p.id));
+  if (!shown.length) return <span className="small muted">Everyone is already a lead.</span>;
+  return (
+    <div className="checks" id={id}>
+      {shown.map(p => {
+        const on = value.includes(p.id);
+        return (
+          <label key={p.id} className={on ? "on" : ""}>
+            <input type="checkbox" checked={on} onChange={() => onChange(on ? value.filter(x => x !== p.id) : [...value, p.id])} />
+            {p.display_name}
+          </label>
+        );
+      })}
+    </div>
+  );
+}
 
 export default function ProjectDialog({ project, people, perms, onClose, onSaved, onError }) {
   const isNew = !project;
   const admin = perms.isAdmin;
   const [f, setF] = useState(() => ({
     code: project?.code || "", name: project?.name || "", summary: project?.summary || "",
-    lead_person: project?.lead_person || "", stage: project?.stage || "Not started",
+    leads: project?.lead_ids || [], stakeholders: project?.stakeholder_ids || [], stage: project?.stage || "Not started",
     priority: project?.priority || "", target_date: project?.target_date || "",
     color: project?.color || SWATCHES[Math.floor(Math.random() * SWATCHES.length)],
   }));
@@ -27,11 +47,15 @@ export default function ProjectDialog({ project, people, perms, onClose, onSaved
       return;
     }
     const lead = { stage: f.stage, summary: f.summary.trim() || null, priority: f.priority || null, target_date: f.target_date || null };
-    const fields = admin ? { ...lead, code: f.code.trim().toUpperCase(), name: f.name.trim(), lead_person: f.lead_person || null, color: f.color } : lead;
+    const fields = admin ? { ...lead, code: f.code.trim().toUpperCase(), name: f.name.trim(), color: f.color } : lead;
     setBusy(true);
     const r = await saveProject(project?.id, fields);
+    if (r.error) { setBusy(false); return setMsg(r.error.includes("init_projects_code_idx") ? `Another project already uses the code ${fields.code}.` : r.error); }
+    if (admin) {
+      const p = await setProjectPeople(r.data.id, f.leads, f.stakeholders.filter(id => !f.leads.includes(id)));
+      if (p.error) { setBusy(false); return setMsg(`Saved the project, but not its leads and stakeholders: ${p.error}`); }
+    }
     setBusy(false);
-    if (r.error) return setMsg(r.error.includes("init_projects_code_idx") ? `Another project already uses the code ${fields.code}.` : r.error);
     onSaved(isNew ? `Created ${fields.name}` : "Project saved");
   };
 
@@ -54,15 +78,19 @@ export default function ProjectDialog({ project, people, perms, onClose, onSaved
         <Field label="Summary" hint="one or two sentences">
           <textarea className="ta" id="pj-summary" rows={2} value={f.summary} onChange={set("summary")} />
         </Field>
-        <div className="grid2">
-          {admin && (
-            <Field label="Lead">
-              <select className="sel w100" id="pj-lead" value={f.lead_person} onChange={set("lead_person")}>
-                <option value="">No lead</option>
-                {people.map(p => <option key={p.id} value={p.id}>{p.display_name}</option>)}
-              </select>
+        {admin && (
+          <>
+            <Field label="Leads" hint="can manage the project's tasks and set its stage">
+              <PeoplePicker id="pj-leads" people={people} value={f.leads}
+                onChange={leads => setF(x => ({ ...x, leads, stakeholders: x.stakeholders.filter(id => !leads.includes(id)) }))} />
             </Field>
-          )}
+            <Field label="Stakeholders" hint="everyone else involved">
+              <PeoplePicker id="pj-stakeholders" people={people} value={f.stakeholders} exclude={f.leads}
+                onChange={stakeholders => setF(x => ({ ...x, stakeholders }))} />
+            </Field>
+          </>
+        )}
+        <div className="grid2">
           <Field label="Stage">
             <select className="sel w100" id="pj-stage" value={f.stage} onChange={set("stage")}>{STATUSES.map(s => <option key={s}>{s}</option>)}</select>
           </Field>

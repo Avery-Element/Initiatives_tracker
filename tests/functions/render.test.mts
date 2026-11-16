@@ -33,6 +33,10 @@ ok(r.html.includes('Waiting on Updated models from suppliers') && r.html.include
 ok(r.html.includes('9 days ago') && r.html.includes('3 of 3 tasks open'), 'past target');
 ok(r.html.includes('never updated'), 'quiet task never updated');
 ok(r.html.includes('>57%<') && r.html.includes('>—<'), 'workload percentages, dash for nobody-open');
+ok(r.html.includes('lead Lisa'), 'one lead');
+r = render('digest', { ...digest, activity: [{ ...digest.activity[0], lead: 'Lisa, Nick' }] });
+ok(r.html.includes('leads Lisa, Nick'), 'several leads');
+r = render('digest', digest);
 ok(r.html.includes('href="https://initiatives.example.com"'), 'button links to the app');
 ok(r.text.includes('BLOCKED') && r.text.includes('Lisa: 30 open'), 'plain-text version');
 let empty = render('digest', { ...digest, activity: [], idle: [], blocked: [], past_target: [], quiet: [], people: [], app_url: null });

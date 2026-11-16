@@ -15,6 +15,8 @@ const STATUS: Record<string, [string, string]> = {
 
 export const esc = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, c =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
+// The database sends a project's leads as "Lisa, Nick"
+const leadWord = (lead?: string | null) => (lead && lead.includes(', ') ? 'leads' : 'lead');
 
 // "Nov 2" from YYYY-MM-DD, without time-zone shifts
 export const fmtDate = (iso?: string | null) => {
@@ -72,7 +74,7 @@ export function renderDigest(p: Json): Rendered {
   text.push('ACTIVITY BY PROJECT');
   if (!p.activity?.length) { body += row(muted('Nothing moved this week.')); text.push('Nothing moved this week.'); }
   for (const pr of p.activity || []) {
-    body += row(`${swatch(pr.color)}<b>${esc(pr.name)}</b> ${muted(`· ${pr.moved} updated · now ${pr.pct}% done · lead ${esc(pr.lead || 'none')}`)}`);
+    body += row(`${swatch(pr.color)}<b>${esc(pr.name)}</b> ${muted(`· ${pr.moved} updated · now ${pr.pct}% done · ${leadWord(pr.lead)} ${esc(pr.lead || 'none')}`)}`);
     text.push(`- ${pr.name}: ${pr.moved} updated, now ${pr.pct}% done`);
     for (const tk of pr.tasks || []) {
       body += row(`<div style="padding-left:16px">${pill(tk.status)} ${esc(tk.title)} ${muted('· ' + esc(who(tk.who)))}${
@@ -162,7 +164,7 @@ export function renderAssigned(p: Json): Rendered {
   const first = String(p.name || '').split(' ')[0] || 'there';
   let body = row(`<div style="padding-top:16px">Hi ${esc(first)}, ${esc(p.by || 'an admin')} added you to a task.</div>`);
   body += row(`<div style="padding:10px 0">${swatch(t.color)}<b>${esc(t.title)}</b><br>
-    <span style="padding-left:16px">${pill(t.status || 'Not started')} ${muted(esc(t.project))}${t.due_date ? muted(` · due ${fmtDate(t.due_date)}`) : ''}${t.lead ? muted(` · lead ${esc(t.lead)}`) : ''}</span></div>`);
+    <span style="padding-left:16px">${pill(t.status || 'Not started')} ${muted(esc(t.project))}${t.due_date ? muted(` · due ${fmtDate(t.due_date)}`) : ''}${t.lead ? muted(` · ${leadWord(t.lead)} ${esc(t.lead)}`) : ''}</span></div>`);
   body += button(p.app_url, 'Open the task');
   const text = [`Hi ${first},`, '', `${p.by || 'An admin'} added you to "${t.title}" (${t.project}).`,
     t.due_date ? `Due ${fmtDate(t.due_date)}.` : '', p.app_url ? `Open it: ${p.app_url}` : ''].filter(Boolean);

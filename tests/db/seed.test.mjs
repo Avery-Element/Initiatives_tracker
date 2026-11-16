@@ -10,7 +10,7 @@ await setupSupabaseStubs(db);
 await db.exec(`create table public.app_profiles (user_id uuid primary key references auth.users(id), username text, display_name text,
   must_change_password boolean not null default false, disabled boolean not null default false, created_by text,
   created_at timestamptz default now(), updated_at timestamptz default now());`);
-for (const f of ['001_init_schema.sql', '002_init_access.sql', '003_init_email.sql', '004_init_hardening.sql'])
+for (const f of ['001_init_schema.sql', '002_init_access.sql', '003_init_email.sql', '004_init_hardening.sql', '005_init_project_people.sql'])
   await db.exec(fs.readFileSync(new URL(`supabase/migrations/${f}`, ROOT), 'utf8'));
 await db.exec(`insert into auth.users (id, email) values (gen_random_uuid(), 'avery@elementcontract.com'), (gen_random_uuid(), 'matt@elementcontract.com'),
   (gen_random_uuid(), 'bryce@users.elementcontract.com')`);

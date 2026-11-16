@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import { setupSupabaseStubs, makeChecker, asUser } from './helpers.mjs';
 
 const ROOT = new URL('../../', import.meta.url);
-const MIGRATIONS = ['001_init_schema.sql', '002_init_access.sql', '003_init_email.sql', '004_init_hardening.sql'];
+const MIGRATIONS = ['001_init_schema.sql', '002_init_access.sql', '003_init_email.sql', '004_init_hardening.sql', '005_init_project_people.sql'];
 
 const { ok, done } = makeChecker();
 const db = new PGlite();
@@ -84,12 +84,27 @@ ok(r.rows?.[0].n === 4, 'anyone with a role can list assignable people');
 console.log('\nProjects');
 r = await asUser(db, lisa, `insert into public.init_projects (code, name) values ('NOPE', 'Nope')`);
 ok(r.error, 'member cannot create projects');
-r = await asUser(db, admin, `insert into public.init_projects (code, name, lead_person, stage, target_date, color)
-  values ('npi-loft', 'Loft Chair launch', $1, 'In progress', public.init_today() - 3, '#F0644E') returning id, code`, [pLisa]);
+r = await asUser(db, admin, `insert into public.init_projects (code, name, stage, target_date, color)
+  values ('npi-loft', 'Loft Chair launch', 'In progress', public.init_today() - 3, '#F0644E') returning id, code`);
 ok(!r.error && r.rows[0].code === 'NPI-LOFT', 'admin creates project; code upper-cased', r.error);
 const loft = r.rows[0].id;
-r = await asUser(db, admin, `insert into public.init_projects (code, name, lead_person) values ('WMS-01', 'Warehouse tool', $1) returning id`, [pNick]);
+r = await asUser(db, admin, `insert into public.init_projects (code, name) values ('WMS-01', 'Warehouse tool') returning id`);
 const wms = r.rows[0].id;
+const setPeople = (user, project, leads, stakeholders) =>
+  asUser(db, user, `select public.init_set_project_people($1, $2::uuid[], $3::uuid[])`, [project, leads, stakeholders]);
+r = await setPeople(admin, loft, [pLisa, pOuri], [pNick, pAvery, pOuri]);
+ok(!r.error, 'admin sets two leads and stakeholders', r.error);
+r = await setPeople(admin, wms, [pNick], []);
+r = await setPeople(lisa, loft, [pLisa], []);
+ok(r.error?.includes('Only Initiatives Admins'), 'a lead cannot change the leads or stakeholders');
+r = await asUser(db, admin, `insert into public.init_project_leads (project_id, person_id) values ($1, $2)`, [wms, pLisa]);
+ok(r.error, 'lead lists change only through init_set_project_people');
+let pp = (await asUser(db, viewer, `select lead_name, lead_names, stakeholder_names from public.init_project_board where id = $1`, [loft])).rows[0];
+ok(pp.lead_name === 'Lisa, Ouri' && pp.stakeholder_names.join() === 'Avery,Nick', 'board lists leads and stakeholders; a lead is not also a stakeholder', pp);
+let la = await one(`select old_value, new_value from init_activity where kind = 'leads' and project_id = $1`, [loft]);
+ok(la?.old_value === null && la.new_value === 'Lisa, Ouri', 'lead change logged');
+r = await setPeople(admin, loft, [pLisa, pOuri], [pNick, pAvery]);
+ok((await one(`select count(*)::int n from init_activity where kind in ('leads', 'stakeholders') and project_id = $1`, [loft])).n === 2, 'saving the same people logs nothing new');
 r = await asUser(db, admin, `insert into public.init_projects (code, name) values ('bad code!', 'x')`);
 ok(r.error, 'invalid code rejected');
 r = await asUser(db, lisa, `update public.init_projects set stage = 'Blocked', summary = 'Waiting on Riverstone' where id = $1`, [loft]);
@@ -97,7 +112,7 @@ ok(!r.error, 'lead changes stage + summary', r.error);
 r = await asUser(db, lisa, `update public.init_projects set name = 'Renamed' where id = $1`, [loft]);
 ok(r.error?.includes('Project leads can change'), 'lead cannot rename the project');
 r = await asUser(db, nick, `update public.init_projects set stage = 'Done' where id = $1`, [loft]);
-ok(r.error || r.affected === 0, 'non-lead member cannot change another project');
+ok(r.error || r.affected === 0, 'non-lead member cannot change another project (being a stakeholder gives no rights)');
 let a = await one(`select * from init_activity where kind = 'stage' and project_id = $1`, [loft]);
 ok(a?.old_value === 'In progress' && a.new_value === 'Blocked' && a.actor === lisa.email, 'stage change logged with actor');
 
@@ -181,13 +196,24 @@ ok(r.error, 'non-lead cannot reorder');
 console.log('\nBoards');
 let b = (await asUser(db, viewer, `select * from public.init_project_board where id = $1`, [loft])).rows[0];
 ok(b.task_count === 4 && b.done_count === 1 && b.blocked_count === 1 && b.pct_done === 25, 'project board counts and % done', b);
-ok(b.moved_this_week === 1 && b.past_target === true && b.lead_name === 'Lisa', 'project board: moved this week, past target, lead');
+ok(b.moved_this_week === 1 && b.past_target === true && b.lead_name === 'Lisa, Ouri', 'project board: moved this week, past target, leads');
 let tb = (await asUser(db, viewer, `select * from public.init_task_board where id = $1`, [tRender])).rows[0];
 ok(tb.assignee_names.join() === 'Lisa,Nick' && tb.overdue && tb.moved_this_week && tb.project_code === 'NPI-LOFT', 'task board: assignees, overdue, moved', tb);
 let pb = (await asUser(db, viewer, `select * from public.init_people_board where display_name = 'Nick'`)).rows[0];
 ok(pb.open_count === 2 && pb.blocked_count === 1 && pb.moved_this_week === 1 && pb.overdue_count === 1, 'people board: Nick open / blocked / moved / overdue', pb);
 pb = (await asUser(db, viewer, `select * from public.init_people_board where display_name = 'Lisa'`)).rows[0];
 ok(pb.lead_of.join() === 'NPI-LOFT' && pb.role === 'Member', 'people board: lead_of + role');
+pb = (await asUser(db, viewer, `select * from public.init_people_board where display_name = 'Nick'`)).rows[0];
+ok(pb.lead_of.join() === 'WMS-01' && pb.stakeholder_of.join() === 'NPI-LOFT', 'people board: stakeholder_of', pb);
+
+// A second lead gets the same rights as the first
+r = await asUser(db, lisa, `update public.init_projects set stage = 'In progress' where id = $1`, [wms]);
+ok(r.error || r.affected === 0, 'Lisa cannot change WMS before she leads it');
+r = await setPeople(admin, wms, [pNick, pLisa], []);
+r = await asUser(db, lisa, `update public.init_projects set stage = 'In progress' where id = $1`, [wms]);
+ok(!r.error && r.affected === 1, 'co-lead changes the stage', r.error);
+r = await asUser(db, nick, `update public.init_projects set summary = 'Vital AI' where id = $1`, [wms]);
+ok(!r.error && r.affected === 1, 'the original lead still can too', r.error);
 
 // ── Digest + email ───────────────────────────────────────────
 console.log('\nDigest + email');
@@ -196,6 +222,7 @@ let d = r.rows?.[0].d;
 ok(d && d.activity[0].code === 'NPI-LOFT' && d.activity[0].moved === 1, 'digest: activity by project', d?.activity);
 ok(d.blocked.length === 1 && d.blocked[0].blocked_on === 'Riverstone', 'digest: blocked with reason');
 ok(d.past_target.length === 1 && d.idle.some(p => p.code === 'WMS-01'), 'digest: past target + idle projects');
+ok(d.idle.find(p => p.code === 'WMS-01')?.lead === 'Lisa, Nick' && d.activity[0].lead === 'Lisa, Ouri', 'digest: every lead named');
 ok(d.people.find(p => p.name === 'Nick')?.pct === 50, 'digest: Nick moved 1 of 2 open = 50%');
 r = await asUser(db, nobody, `select public.init_digest() d`);
 ok(r.error, 'no role → no digest');

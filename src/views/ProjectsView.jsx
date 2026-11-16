@@ -30,7 +30,7 @@ export default function ProjectsView({ data, access, perms, onChanged, onError, 
     (filter !== "attention" || t.status === "Blocked" || t.overdue);
   const projects = data.projects.filter(p => !p.archived_at).filter(p => {
     if (filter === "all" && !personId) return true;
-    if (personId && p.lead_person === personId && filter !== "attention") return true;
+    if (personId && (p.lead_ids.includes(personId) || p.stakeholder_ids.includes(personId)) && filter !== "attention") return true;
     if (filter === "attention" && !personId && p.past_target) return true;
     return (tasksByProject.get(p.id) || []).some(matchTask);
   });
@@ -102,7 +102,10 @@ function ProjectRow({ p, tasks, open, onToggle, matchTask, personName, today, pe
               <span className={`prio${p.priority === "Urgent" ? " urgent" : ""}`}>{p.priority} priority</span>}
           </div>
           <div className="meta">
-            <span>Lead: <b>{p.lead_name || "none"}</b></span>
+            <span>{p.lead_names.length > 1 ? "Leads" : "Lead"}: <b>{p.lead_name || "none"}</b></span>
+            {p.stakeholder_names.length > 0 &&
+              <span title={p.stakeholder_names.join(", ")}>Stakeholders: <b>{p.stakeholder_names.length > 3
+                ? `${p.stakeholder_names.slice(0, 3).join(", ")} +${p.stakeholder_names.length - 3}` : p.stakeholder_names.join(", ")}</b></span>}
             <Avatars names={p.team_names || []} />
             {personName && <span className="wk"><b>{plural(shown.length, "task")}</b> for {personName}</span>}
             <span className={`wk${p.moved_this_week ? "" : " zero"}`}>

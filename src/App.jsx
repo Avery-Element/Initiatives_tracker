@@ -103,7 +103,7 @@ export default function App() {
   // Permission helpers: mirror the database rules so the UI only offers what will work.
   // The database enforces them regardless.
   const perms = useMemo(() => {
-    const leadOf = new Set((data?.projects || []).filter(p => myPerson && p.lead_person === myPerson).map(p => p.id));
+    const leadOf = new Set((data?.projects || []).filter(p => myPerson && p.lead_ids?.includes(myPerson)).map(p => p.id));
     const leads = (projectId) => isAdmin || (canWrite && leadOf.has(projectId));
     return {
       isAdmin, canWrite, myPerson, leads,
