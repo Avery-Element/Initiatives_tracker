@@ -58,7 +58,8 @@ runs hourly. Admins see the outbox and its errors under **Admin → Email**.
 4. `supabase/migrations/004_init_hardening.sql`: function permissions, search_path
 5. `supabase/migrations/005_init_project_people.sql`: several leads per project, plus stakeholders
    (replaces `init_projects.lead_person`; existing leads carry over)
-6. Optional: `supabase/seed/001_lindsay_tracker_oct30.sql` loads the six projects from Lindsay's
+6. `supabase/migrations/006_init_department.sql`: a department per project (sets its color in the app)
+7. Optional: `supabase/seed/001_lindsay_tracker_oct30.sql` loads the six projects from Lindsay's
    tracker (already loaded on the live project).
 
 The live project was migrated in steps (`init_001` … `init_005` in Supabase's migration list);
@@ -66,6 +67,7 @@ two small follow-ups were folded back into 001 and 003, so running 001–004 fre
 same result.
 
 `005` was applied to the live project on Nov 16, 2026 as `init_006_project_people`.
+`006` was applied on Nov 17, 2026 as `init_007_department`.
 
 ### Email (to turn it on)
 

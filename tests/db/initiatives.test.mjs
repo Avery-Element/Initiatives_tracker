@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import { setupSupabaseStubs, makeChecker, asUser } from './helpers.mjs';
 
 const ROOT = new URL('../../', import.meta.url);
-const MIGRATIONS = ['001_init_schema.sql', '002_init_access.sql', '003_init_email.sql', '004_init_hardening.sql', '005_init_project_people.sql'];
+const MIGRATIONS = ['001_init_schema.sql', '002_init_access.sql', '003_init_email.sql', '004_init_hardening.sql', '005_init_project_people.sql', '006_init_department.sql'];
 
 const { ok, done } = makeChecker();
 const db = new PGlite();
@@ -113,6 +113,14 @@ r = await asUser(db, lisa, `update public.init_projects set name = 'Renamed' whe
 ok(r.error?.includes('Project leads can change'), 'lead cannot rename the project');
 r = await asUser(db, nick, `update public.init_projects set stage = 'Done' where id = $1`, [loft]);
 ok(r.error || r.affected === 0, 'non-lead member cannot change another project (being a stakeholder gives no rights)');
+r = await asUser(db, admin, `update public.init_projects set department = 'Design', color = '#D9488F' where id = $1`, [loft]);
+ok(!r.error, 'admin sets the department', r.error);
+r = await asUser(db, admin, `update public.init_projects set department = 'Marketing' where id = $1`, [loft]);
+ok(r.error, 'unknown department rejected');
+r = await asUser(db, lisa, `update public.init_projects set department = 'Office' where id = $1`, [loft]);
+ok(r.error?.includes('Project leads can change'), 'lead cannot change the department');
+pp = (await asUser(db, viewer, `select department, lead_name from public.init_project_board where id = $1`, [loft])).rows[0];
+ok(pp?.department === 'Design' && pp.lead_name === 'Lisa, Ouri', 'board shows the department', pp);
 let a = await one(`select * from init_activity where kind = 'stage' and project_id = $1`, [loft]);
 ok(a?.old_value === 'In progress' && a.new_value === 'Blocked' && a.actor === lisa.email, 'stage change logged with actor');
 

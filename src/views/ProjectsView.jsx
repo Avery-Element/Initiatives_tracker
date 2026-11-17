@@ -2,7 +2,7 @@
 // Click a row to see its tasks; change a task's status right from the list.
 import { useState, useMemo } from "react";
 import { addTask, updateTask, setAssignees } from "../supabase.js";
-import { fmtDate, daysBetween, plural, localDay } from "../lib.js";
+import { fmtDate, daysBetween, plural, localDay, DEPARTMENTS } from "../lib.js";
 import { Avatars, Swatch, StatusPill, StatusSelect, Bar, Legend } from "./common.jsx";
 import ProjectDialog from "./ProjectDialog.jsx";
 
@@ -10,13 +10,28 @@ const OPEN_KEY = "initiatives-open-projects";
 const loadOpen = () => { try { return new Set(JSON.parse(localStorage.getItem(OPEN_KEY) || "[]")); } catch { return new Set(); } };
 const saveOpen = (s) => { try { localStorage.setItem(OPEN_KEY, JSON.stringify([...s])); } catch { /* storage blocked */ } };
 
+const prioRank = (p) => (p.priority === "Urgent" ? 0 : p.priority === "High" ? 1 : 2);
+const deptRank = (p) => { const i = DEPARTMENTS.findIndex(d => d.name === p.department); return i < 0 ? DEPARTMENTS.length : i; };
+// Earliest date first; no date goes last
+const byDate = (a, b) => (a && b ? a.localeCompare(b) : a ? -1 : b ? 1 : 0);
+// Each sort falls back to priority (Urgent, then High), then the usual order
+const PROJECT_SORTS = {
+  priority: (a, b) => prioRank(a) - prioRank(b),
+  department: (a, b) => deptRank(a) - deptRank(b) || prioRank(a) - prioRank(b),
+  due: (a, b) => byDate(a.target_date, b.target_date) || prioRank(a) - prioRank(b),
+};
+
 export default function ProjectsView({ data, access, perms, onChanged, onError, notify, openTask, personFilter, setPersonFilter }) {
   const [open, setOpen] = useState(loadOpen);
-  const [filter, setFilter] = useState("all");            // all | attention | mine
+  const [filter, setFilterRaw] = useState("all");         // all | attention | mine
+  const [attnClosed, setAttnClosed] = useState(() => new Set()); // cards collapsed while "Needs attention" opens them all
   const [editing, setEditing] = useState(null);           // project, or {} for new
+  const [sort, setSort] = useState("priority");           // priority | department | due
   const today = access.today;
+  const setFilter = (f) => { setFilterRaw(f); setAttnClosed(new Set()); };
 
   const toggle = (id) => setOpen(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); saveOpen(s); return s; });
+  const toggleAttn = (id) => setAttnClosed(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
 
   const tasksByProject = useMemo(() => {
     const m = new Map();
@@ -33,7 +48,7 @@ export default function ProjectsView({ data, access, perms, onChanged, onError, 
     if (personId && (p.lead_ids.includes(personId) || p.stakeholder_ids.includes(personId)) && filter !== "attention") return true;
     if (filter === "attention" && !personId && p.past_target) return true;
     return (tasksByProject.get(p.id) || []).some(matchTask);
-  });
+  }).sort(PROJECT_SORTS[sort]);
 
   const setStatus = async (t, status) => {
     const r = await updateTask(t.id, { status });
@@ -54,6 +69,11 @@ export default function ProjectsView({ data, access, perms, onChanged, onError, 
           <option value="">Everyone</option>
           {data.assignable.map(p => <option key={p.id} value={p.id}>{p.display_name}</option>)}
         </select>
+        <select className="sel" aria-label="Sort projects" value={sort} onChange={e => setSort(e.target.value)}>
+          <option value="priority">Sort: Priority</option>
+          <option value="department">Sort: Department</option>
+          <option value="due">Sort: Due date</option>
+        </select>
         {perms.isAdmin && <button className="btn" onClick={() => setEditing({})}>New project</button>}
       </div>
       <Legend />
@@ -66,13 +86,16 @@ export default function ProjectsView({ data, access, perms, onChanged, onError, 
         </div>
       ) : (
         <div className="plist">
-          {projects.map(p => (
-            <ProjectRow key={p.id} p={p} tasks={tasksByProject.get(p.id) || []} open={open.has(p.id) || (filter === "attention" && !personId)}
-              onToggle={() => toggle(p.id)} matchTask={personId || filter === "attention" ? matchTask : null}
+          {projects.map(p => {
+            const attnOpen = filter === "attention" && !personId;  // starts expanded, but each card can still be collapsed
+            return (
+            <ProjectRow key={p.id} p={p} tasks={tasksByProject.get(p.id) || []} open={attnOpen ? !attnClosed.has(p.id) : open.has(p.id)}
+              onToggle={() => (attnOpen ? toggleAttn(p.id) : toggle(p.id))} byDue={sort === "due"} matchTask={personId || filter === "attention" ? matchTask : null}
               personName={personId ? (filter === "mine" ? "you" : data.assignable.find(x => x.id === personId)?.display_name) : null}
               today={today} perms={perms} people={data.assignable} onStatus={setStatus} openTask={openTask}
               onEdit={() => setEditing(p)} onChanged={onChanged} onError={onError} notify={notify} />
-          ))}
+            );
+          })}
         </div>
       )}
       {editing && <ProjectDialog project={editing.id ? editing : null} people={data.assignable} perms={perms}
@@ -81,8 +104,11 @@ export default function ProjectsView({ data, access, perms, onChanged, onError, 
   );
 }
 
-function ProjectRow({ p, tasks, open, onToggle, matchTask, personName, today, perms, people, onStatus, openTask, onEdit, onChanged, onError, notify }) {
-  const shown = matchTask ? tasks.filter(matchTask) : tasks;
+function ProjectRow({ p, tasks, open, onToggle, byDue, matchTask, personName, today, perms, people, onStatus, openTask, onEdit, onChanged, onError, notify }) {
+  // Overdue tasks first (earliest due date on top). Sorted by due date, the rest follow by due
+  // date too (no date last); otherwise they keep their list order.
+  const shown = (matchTask ? tasks.filter(matchTask) : tasks).slice().sort((a, b) =>
+    (b.overdue - a.overdue) || (byDue || (a.overdue && b.overdue) ? byDate(a.due_date, b.due_date) : 0));
   const canManage = perms.leads(p.id);
   const due = p.target_date
     ? (p.past_target
@@ -102,6 +128,7 @@ function ProjectRow({ p, tasks, open, onToggle, matchTask, personName, today, pe
               <span className={`prio${p.priority === "Urgent" ? " urgent" : ""}`}>{p.priority} priority</span>}
           </div>
           <div className="meta">
+            {p.department && <span>{p.department}</span>}
             <span>{p.lead_names.length > 1 ? "Leads" : "Lead"}: <b>{p.lead_name || "none"}</b></span>
             {p.stakeholder_names.length > 0 &&
               <span title={p.stakeholder_names.join(", ")}>Stakeholders: <b>{p.stakeholder_names.length > 3

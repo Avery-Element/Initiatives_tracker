@@ -3,21 +3,17 @@
 // enforces the same split).
 import { useState, useRef, useLayoutEffect, useCallback } from "react";
 import { saveProject, setProjectPeople } from "../supabase.js";
-import { STATUSES, PRIORITIES, SWATCHES } from "../lib.js";
-import { Dialog, Field } from "./common.jsx";
+import { STATUSES, PRIORITIES, DEPARTMENTS, deptColor } from "../lib.js";
+import { Dialog, Field, Swatch } from "./common.jsx";
 
-// A select-style button that opens a checkbox list, for picking any number of people.
-// `exclude` hides people already picked elsewhere. The list is position: fixed so the
-// dialog's scrolling doesn't clip it; it opens upward when there's no room below.
-function PeopleSelect({ id, label, hint, people, value, onChange, exclude = [], placeholder = "Nobody" }) {
+// Open/close and placement for a select-style button with a popup list. The list is
+// position: fixed so the dialog's scrolling doesn't clip it; it opens upward when there's
+// no room below. Escape or a click outside closes it.
+function usePopup() {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState(null);
   const btn = useRef(null);
   const pop = useRef(null);
-  const shown = people.filter(p => !exclude.includes(p.id));
-  const names = people.filter(p => value.includes(p.id)).map(p => p.display_name);
-  const summary = names.length <= 2 ? names.join(", ") : `${names.slice(0, 2).join(", ")} +${names.length - 2}`;
-  const toggle = (pid) => onChange(value.includes(pid) ? value.filter(x => x !== pid) : [...value, pid]);
 
   const place = useCallback(() => {
     if (!btn.current) return;
@@ -46,6 +42,23 @@ function PeopleSelect({ id, label, hint, people, value, onChange, exclude = [], 
     };
   }, [open, place]);
 
+  const close = () => { setOpen(false); btn.current?.focus(); };
+  return { open, setOpen, pos, btn, pop, close };
+}
+
+const Chevron = () => (
+  <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+);
+
+// A select-style button that opens a checkbox list, for picking any number of people.
+// `exclude` hides people already picked elsewhere.
+function PeopleSelect({ id, label, hint, people, value, onChange, exclude = [], placeholder = "Nobody" }) {
+  const { open, setOpen, pos, btn, pop, close } = usePopup();
+  const shown = people.filter(p => !exclude.includes(p.id));
+  const names = people.filter(p => value.includes(p.id)).map(p => p.display_name);
+  const summary = names.length <= 2 ? names.join(", ") : `${names.slice(0, 2).join(", ")} +${names.length - 2}`;
+  const toggle = (pid) => onChange(value.includes(pid) ? value.filter(x => x !== pid) : [...value, pid]);
+
   return (
     <div className="field">
       <span id={`${id}-lbl`}>{label}{hint && <> <span className="hint">{hint}</span></>}</span>
@@ -55,7 +68,7 @@ function PeopleSelect({ id, label, hint, people, value, onChange, exclude = [], 
         <span className={`v${names.length ? "" : " ph"}`} title={names.join(", ")}>
           {shown.length ? summary || placeholder : "Everyone is already a lead"}
         </span>
-        <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+        <Chevron />
       </button>
       {open && pos && (
         <div ref={pop} id={`${id}-list`} className="msel-pop" role="group" aria-label={label} style={pos}>
@@ -70,7 +83,37 @@ function PeopleSelect({ id, label, hint, people, value, onChange, exclude = [], 
           <div className="msel-foot">
             <span>{value.length} selected</span>
             {value.length > 0 && <button type="button" onClick={() => onChange([])}>Clear</button>}
-            <button type="button" onClick={() => { setOpen(false); btn.current?.focus(); }}>Done</button>
+            <button type="button" onClick={close}>Done</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Department picker: a dropdown that shows each department's color. Picking one closes it.
+function DeptSelect({ id, value, onChange }) {
+  const { open, setOpen, pos, btn, pop, close } = usePopup();
+  return (
+    <div className="field">
+      <span id={`${id}-lbl`}>Department</span>
+      <button type="button" ref={btn} id={id} className="sel w100 msel-btn"
+        aria-haspopup="true" aria-expanded={open} aria-controls={`${id}-list`} aria-labelledby={`${id}-lbl ${id}`}
+        onClick={() => setOpen(o => !o)}>
+        {value && <Swatch small color={deptColor(value)} />}
+        <span className={`v${value ? "" : " ph"}`}>{value || "Choose a department"}</span>
+        <Chevron />
+      </button>
+      {open && pos && (
+        <div ref={pop} id={`${id}-list`} className="msel-pop" role="radiogroup" aria-label="Department" style={pos}>
+          <div className="msel-opts">
+            {DEPARTMENTS.map(d => (
+              <label key={d.name}>
+                <input type="radio" name={id} checked={value === d.name} onChange={() => { onChange(d.name); close(); }} />
+                <Swatch small color={d.color} />
+                {d.name}
+              </label>
+            ))}
           </div>
         </div>
       )}
@@ -99,7 +142,7 @@ export default function ProjectDialog({ project, people, perms, onClose, onSaved
     name: project?.name || "", summary: project?.summary || "",
     leads: project?.lead_ids || [], stakeholders: project?.stakeholder_ids || [], stage: project?.stage || "Not started",
     priority: project?.priority || "", target_date: project?.target_date || "",
-    color: project?.color || SWATCHES[Math.floor(Math.random() * SWATCHES.length)],
+    department: project?.department || "",
   }));
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
@@ -109,12 +152,14 @@ export default function ProjectDialog({ project, people, perms, onClose, onSaved
   const save = async (e) => {
     e.preventDefault();
     setMsg("");
-    if (admin && !f.name.trim()) {
-      setMsg("Give the project a name.");
+    if (admin && (!f.name.trim() || (isNew && !f.department))) {
+      setMsg(isNew ? "Give the project a name and pick its department." : "Give the project a name.");
       return;
     }
     const lead = { stage: f.stage, summary: f.summary.trim() || null, priority: f.priority || null, target_date: f.target_date || null };
-    const fields = admin ? { ...lead, name: f.name.trim(), color: f.color } : lead;
+    // The color follows the department. Older projects with no department keep their color.
+    const dept = f.department ? { department: f.department, color: deptColor(f.department) } : {};
+    const fields = admin ? { ...lead, name: f.name.trim(), ...dept } : lead;
     setBusy(true);
     let r;
     if (isNew) {
@@ -147,7 +192,10 @@ export default function ProjectDialog({ project, people, perms, onClose, onSaved
       <form onSubmit={save} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <h3>{isNew ? "New project" : project.name}</h3>
         {admin && (
-          <Field label="Name"><input className="inp w100" id="pj-name" value={f.name} onChange={set("name")} autoFocus={isNew} /></Field>
+          <div className="grid2">
+            <Field label="Name"><input className="inp w100" id="pj-name" value={f.name} onChange={set("name")} autoFocus={isNew} /></Field>
+            <DeptSelect id="pj-dept" value={f.department} onChange={department => setF(x => ({ ...x, department }))} />
+          </div>
         )}
         <Field label="Summary" hint="one or two sentences">
           <textarea className="ta" id="pj-summary" rows={2} value={f.summary} onChange={set("summary")} />
@@ -171,14 +219,6 @@ export default function ProjectDialog({ project, people, perms, onClose, onSaved
           </Field>
           <Field label="Target date"><input className="inp w100" type="date" id="pj-target" value={f.target_date} onChange={set("target_date")} /></Field>
         </div>
-        {admin && (
-          <Field label="Color">
-            <div className="swatches">
-              {SWATCHES.map(c => <button type="button" key={c} style={{ "--pc": c }} aria-label={`Color ${c}`} aria-pressed={f.color === c}
-                onClick={() => setF(x => ({ ...x, color: c }))} />)}
-            </div>
-          </Field>
-        )}
         {msg && <div className="banner err" style={{ marginTop: 0 }}>{msg}</div>}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
           <button className="btn" type="submit" disabled={busy}>{busy ? "Saving…" : isNew ? "Create project" : "Save"}</button>

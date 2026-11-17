@@ -5,8 +5,16 @@ export const PRIORITIES = ['Low', 'Medium', 'High', 'Urgent'];
 // class suffix for a status: 'In progress' → 'in_progress'
 export const slug = (s) => String(s || 'Not started').toLowerCase().replace(/\s+/g, '_');
 
-// Swatch colors for projects (upholstery-sample brights). Any #RRGGBB works; these are the picker.
-export const SWATCHES = ['#F0644E', '#F2A93B', '#14A3A0', '#4C6FFF', '#C2457E', '#7A4FD0', '#2F9E5B', '#E07B39', '#3B8FD9', '#8A6D3B'];
+// Departments, in sort order. A project's color comes from its department.
+// The names must match the check on init_projects.department (migration 006).
+export const DEPARTMENTS = [
+  { name: 'Design', color: '#D9488F' },              // pink
+  { name: 'Office', color: '#3B7DD8' },              // blue
+  { name: 'General', color: '#7A4FD0' },             // purple
+  { name: 'Warehouse/Shipping', color: '#E8B21E' },  // yellow
+  { name: 'Production', color: '#2F9E5B' },          // green
+];
+export const deptColor = (name) => DEPARTMENTS.find(d => d.name === name)?.color;
 
 export const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 export const HOURS = Array.from({ length: 24 }, (_, h) => ({ value: h, label: new Date(Date.UTC(2000, 0, 1, h)).toLocaleTimeString('en-US', { hour: 'numeric', timeZone: 'UTC' }) }));
