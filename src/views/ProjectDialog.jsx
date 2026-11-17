@@ -78,11 +78,25 @@ function PeopleSelect({ id, label, hint, people, value, onChange, exclude = [], 
   );
 }
 
+// The database needs a short unique code per project (shown on People and Admin). New projects
+// get one made from the name's leading words ("Loft Chair launch" -> "LOFT-CHAIR"), max 13 chars
+// so a "-2".."-99" suffix still fits the 16-char limit if the code is already taken.
+function codeFromName(name) {
+  const words = name.toUpperCase().match(/[A-Z0-9]+/g) || [];
+  let code = "";
+  for (const w of words) {
+    const next = code ? `${code}-${w}` : w;
+    if (next.length > 13) { if (!code) code = w.slice(0, 13); break; }
+    code = next;
+  }
+  return code.length >= 2 ? code : `PROJ${code}`;
+}
+
 export default function ProjectDialog({ project, people, perms, onClose, onSaved, onError }) {
   const isNew = !project;
   const admin = perms.isAdmin;
   const [f, setF] = useState(() => ({
-    code: project?.code || "", name: project?.name || "", summary: project?.summary || "",
+    name: project?.name || "", summary: project?.summary || "",
     leads: project?.lead_ids || [], stakeholders: project?.stakeholder_ids || [], stage: project?.stage || "Not started",
     priority: project?.priority || "", target_date: project?.target_date || "",
     color: project?.color || SWATCHES[Math.floor(Math.random() * SWATCHES.length)],
@@ -95,15 +109,25 @@ export default function ProjectDialog({ project, people, perms, onClose, onSaved
   const save = async (e) => {
     e.preventDefault();
     setMsg("");
-    if (admin && (!f.name.trim() || !/^[A-Za-z0-9][A-Za-z0-9-]{1,15}$/.test(f.code.trim()))) {
-      setMsg("Give the project a name and a short code: 2–16 letters, numbers or dashes, like NPI-LOFT.");
+    if (admin && !f.name.trim()) {
+      setMsg("Give the project a name.");
       return;
     }
     const lead = { stage: f.stage, summary: f.summary.trim() || null, priority: f.priority || null, target_date: f.target_date || null };
-    const fields = admin ? { ...lead, code: f.code.trim().toUpperCase(), name: f.name.trim(), color: f.color } : lead;
+    const fields = admin ? { ...lead, name: f.name.trim(), color: f.color } : lead;
     setBusy(true);
-    const r = await saveProject(project?.id, fields);
-    if (r.error) { setBusy(false); return setMsg(r.error.includes("init_projects_code_idx") ? `Another project already uses the code ${fields.code}.` : r.error); }
+    let r;
+    if (isNew) {
+      // Try the name's code, then CODE-2, CODE-3… if another project already has it
+      const base = codeFromName(fields.name);
+      for (let n = 1; n < 100; n++) {
+        r = await saveProject(undefined, { ...fields, code: n === 1 ? base : `${base}-${n}` });
+        if (!r.error?.includes("init_projects_code_idx")) break;
+      }
+    } else {
+      r = await saveProject(project.id, fields);
+    }
+    if (r.error) { setBusy(false); return setMsg(r.error); }
     if (admin) {
       const p = await setProjectPeople(r.data.id, f.leads, f.stakeholders.filter(id => !f.leads.includes(id)));
       if (p.error) { setBusy(false); return setMsg(`Saved the project, but not its leads and stakeholders: ${p.error}`); }
@@ -123,10 +147,7 @@ export default function ProjectDialog({ project, people, perms, onClose, onSaved
       <form onSubmit={save} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <h3>{isNew ? "New project" : project.name}</h3>
         {admin && (
-          <div className="grid2">
-            <Field label="Name"><input className="inp w100" id="pj-name" value={f.name} onChange={set("name")} autoFocus={isNew} /></Field>
-            <Field label="Code" hint="short, e.g. NPI-LOFT"><input className="inp w100" id="pj-code" value={f.code} onChange={set("code")} maxLength={16} /></Field>
-          </div>
+          <Field label="Name"><input className="inp w100" id="pj-name" value={f.name} onChange={set("name")} autoFocus={isNew} /></Field>
         )}
         <Field label="Summary" hint="one or two sentences">
           <textarea className="ta" id="pj-summary" rows={2} value={f.summary} onChange={set("summary")} />
