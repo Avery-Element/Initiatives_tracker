@@ -95,3 +95,28 @@ the same pattern as Shipping's alerts.
 4. Go live: apply migrations, load starting data, create missing logins, deploy to Cloudflare,
    verify the Resend domain, first digest to Matt
 5. Later: Google Sheet export, per-person "my week" email, subtasks if people ask for them
+
+## Revision 2: after the council review (Nov 19, 2026)
+
+An LLM council reviewed the app (`council/council-report-2026-11-19-1114.html`). What changed and why:
+
+| Change | Why |
+|---|---|
+| **Weekly check-in per project from its lead**: health (On track / At risk / Off track), one sentence, optional "what I need from Matt" | The project, not the task, is the unit Matt decides on. About 20 check-ins a week instead of 14 people grooming task lists; task detail stays optional. |
+| **Asks for Matt**, answered in the app by an admin (Matt, or Lindsay for Matt), answer emailed to the leads | Gives leads a reason to update: it gets them help from the president. |
+| **Digest note** an admin writes for the week | Lindsay, as app manager and Matt's EA, can add context or what to raise at the Monday meeting. |
+| **Digest rebuilt**: note, asks, three headline lines, a data-quality line, projects by department with health, blocked, past target, "Too much on the go?" | Short and decision-first. The data-quality line ("9 of 14 check-ins in · not heard from: X") tells Matt how far to trust the rest. |
+| **Per-person "% moved this week" removed**; workload is counts plus last update | It measured typing rather than progress and read like surveillance. |
+| **Progress bar replaced by health** on the Projects screen; "N of M tasks done" kept as text | % of tasks done drops whenever a task is added and treats all tasks as equal. |
+| **Group + filter by department** | 12–24 initiatives stay; grouping cuts the visual load. |
+| **Purpose + "how we'll know it worked"** on each project | So "Done" means the result happened, not just the tasks. |
+| **"Waiting on" can name a person** (plus an outside party or note) | Free text produced "Jim", "jim h", "Jim's quote". |
+| **Thursday email is now "Your week"** for everyone with open tasks or a check-in due | The old reminder only reached people who were behind, so it read as a reprimand. |
+| Status and health tooltips, one intro line per screen, "Also involved" → "Outside parties" | Vocabulary only the builder knew. |
+
+Not built, on purpose: no-login email actions (logins are being rolled out), Sheet export,
+subtasks, SMS, AI-written summaries, trend charts, links to the other apps.
+
+Outside the code: Matt says at a Monday meeting that the tracker is the source of truth and its
+data isn't used in performance reviews; after two or three digests, ask him which sections he
+acts on and trim the rest.

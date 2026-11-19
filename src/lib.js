@@ -40,3 +40,23 @@ export const daysBetween = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) 
 export const hue = (name) => { let h = 0; for (const c of String(name)) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
 export const initials = (name) => String(name).replace(/\(.*\)/, '').trim().split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase();
 export const plural = (n, word, many = word + 's') => `${n} ${n === 1 ? word : many}`;
+
+// What each status means (tooltips, legend)
+export const STATUS_HELP = {
+  'Not started': "Work hasn't begun yet",
+  'In progress': 'Someone is actively working on it',
+  'Blocked': "Can't move until someone or something else acts",
+  'Parked': 'Paused on purpose; will pick back up later',
+  'Done': 'Finished',
+};
+
+// Weekly check-in health, set by a project's lead
+export const HEALTHS = ['On track', 'At risk', 'Off track'];
+export const HEALTH_HELP = {
+  'On track': 'Moving as planned',
+  'At risk': 'Could slip without attention',
+  'Off track': 'Will miss its target without a change',
+  'No check-in': 'No check-in from a lead in the last two weeks',
+};
+// A project's current health: its latest check-in, if it's from this week or last
+export const currentHealth = (p) => (p.latest_checkin && p.latest_checkin.age_days <= 13 ? p.latest_checkin.health : null);

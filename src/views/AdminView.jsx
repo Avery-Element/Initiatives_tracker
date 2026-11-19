@@ -190,9 +190,9 @@ function EmailAdmin({ onError, notify }) {
               </Field>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <Toggle k="reminders_enabled" label="Reminders to people with stale tasks" />
+              <Toggle k="reminders_enabled" label={`"Your week" email to everyone with open tasks or a check-in due`} />
               <When dow="reminder_dow" hour="reminder_hour" />
-              <Field label="A task is stale after" hint="days without a status change or note">
+              <Field label="A task needs an update after" hint="days without a status change or note">
                 <select className="sel" value={s.stale_days} onChange={e => save({ stale_days: Number(e.target.value) })}>
                   {[3, 5, 7, 10, 14, 21].map(n => <option key={n} value={n}>{n} days</option>)}</select>
               </Field>
@@ -207,9 +207,9 @@ function EmailAdmin({ onError, notify }) {
 
       <div className="card">
         <h3>Send now</h3>
-        <p className="muted">Reminders only go to people with something overdue or stale. Each send shows up in the outbox below within a minute.</p>
+        <p className="muted">"Your week" goes to everyone with open tasks or a check-in due, with overdue and quiet tasks flagged first. Each send shows up in the outbox below within a minute.</p>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-          <button className="btn" disabled={busy} onClick={() => run(sendRemindersNow)}>Send reminders now</button>
+          <button className="btn" disabled={busy} onClick={() => run(sendRemindersNow)}>Send "Your week" now</button>
           <input className="inp" type="email" id="test-to" placeholder="Test address (default: yours)" value={testTo} onChange={e => setTestTo(e.target.value)} aria-label="Test email address" />
           <button className="btn ghost" disabled={busy} onClick={() => run(sendTest, testTo)}>Send a test</button>
           <span className="small muted">The digest has its own button on the Weekly digest tab.</span>
@@ -239,7 +239,8 @@ function EmailAdmin({ onError, notify }) {
 // ── Activity log ────────────────────────────────────────────────
 const KIND_LABEL = { project_created: "created project", stage: "changed stage", project_edit: "edited project", leads: "changed leads", stakeholders: "changed stakeholders", archived: "archived", restored: "restored",
   task_created: "added task", status: "changed status", note: "added a note", assigned: "assigned", unassigned: "unassigned", due: "changed due date",
-  title: "renamed task", blocked_on: "marked waiting on", task_deleted: "deleted task", person: "updated person", role: "changed role", signin: "signed in" };
+  title: "renamed task", blocked_on: "marked waiting on", task_deleted: "deleted task", person: "updated person", role: "changed role", signin: "signed in",
+  checkin: "checked in", answer: "answered an ask" };
 
 function ActivityLog({ data, onError }) {
   const [project, setProject] = useState("");

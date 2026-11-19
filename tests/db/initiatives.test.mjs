@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import { setupSupabaseStubs, makeChecker, asUser } from './helpers.mjs';
 
 const ROOT = new URL('../../', import.meta.url);
-const MIGRATIONS = ['001_init_schema.sql', '002_init_access.sql', '003_init_email.sql', '004_init_hardening.sql', '005_init_project_people.sql', '006_init_department.sql'];
+const MIGRATIONS = ['001_init_schema.sql', '002_init_access.sql', '003_init_email.sql', '004_init_hardening.sql', '005_init_project_people.sql', '006_init_department.sql', '007_init_checkins.sql'];
 
 const { ok, done } = makeChecker();
 const db = new PGlite();
@@ -18,6 +18,8 @@ await db.exec(`create table public.app_profiles (
   user_id uuid primary key references auth.users(id) on delete cascade, username text unique, display_name text,
   must_change_password boolean not null default false, disabled boolean not null default false,
   created_by text, created_at timestamptz default now(), updated_at timestamptz default now());`);
+// The live project also has an outside reporting role with read access to the project board
+await db.exec(`create role vitalai_reader nologin`);
 for (const f of MIGRATIONS) await db.exec(fs.readFileSync(new URL(`supabase/migrations/${f}`, ROOT), 'utf8'));
 const one = async (sql, p) => (await db.query(sql, p)).rows[0];
 
@@ -227,11 +229,13 @@ ok(!r.error && r.affected === 1, 'the original lead still can too', r.error);
 console.log('\nDigest + email');
 r = await asUser(db, viewer, `select public.init_digest() d`);
 let d = r.rows?.[0].d;
-ok(d && d.activity[0].code === 'NPI-LOFT' && d.activity[0].moved === 1, 'digest: activity by project', d?.activity);
-ok(d.blocked.length === 1 && d.blocked[0].blocked_on === 'Riverstone', 'digest: blocked with reason');
-ok(d.past_target.length === 1 && d.idle.some(p => p.code === 'WMS-01'), 'digest: past target + idle projects');
-ok(d.idle.find(p => p.code === 'WMS-01')?.lead === 'Lisa, Nick' && d.activity[0].lead === 'Lisa, Ouri', 'digest: every lead named');
-ok(d.people.find(p => p.name === 'Nick')?.pct === 50, 'digest: Nick moved 1 of 2 open = 50%');
+ok(d && d.projects.find(p => p.code === 'NPI-LOFT')?.moved === 1, 'digest: projects with movement this week', d?.projects);
+ok(d.blocked.length === 1 && d.blocked[0].blocked_on === 'Riverstone' && d.blocked[0].waiting_on === 'Riverstone', 'digest: blocked with reason');
+ok(d.past_target.length === 1 && d.headline.moving.includes('Loft Chair launch'), 'digest: past target + moving projects', d?.headline);
+ok(d.projects.find(p => p.code === 'WMS-01')?.lead === 'Lisa, Nick' && d.projects.find(p => p.code === 'NPI-LOFT')?.lead === 'Lisa, Ouri', 'digest: every lead named');
+ok(d.people.every(p => !('pct' in p) && !('moved' in p)) && d.people.find(p => p.name === 'Nick')?.open === 2, 'digest: workload is counts only (no per-person %)', d.people);
+ok(d.data_quality.checkins_expected === 2 && d.data_quality.checkins_in === 0 && d.data_quality.missing.length === 2, 'digest: data quality counts missing check-ins', d.data_quality);
+ok(d.headline.no_checkin === 2 && Array.isArray(d.asks) && Array.isArray(d.park_candidates), 'digest: headline, asks and park candidates present');
 r = await asUser(db, nobody, `select public.init_digest() d`);
 ok(r.error, 'no role → no digest');
 
@@ -256,9 +260,13 @@ await db.query(`update init_activity set at = now() - interval '10 days' where t
 await db.query(`update init_tasks set status = 'In progress' where id = $1`, [tStock]);   // superuser: no trigger checks
 await db.query(`update init_activity set at = now() - interval '10 days' where task_id = $1`, [tStock]);
 const n = (await one(`select public.init_queue_reminders() n`)).n;
-const rem = (await db.query(`select o.recipients, o.payload from init_outbox o where kind = 'reminder' order by recipients`)).rows;
-ok(n === 3 && rem.length === 3, 'reminders queued for Lisa + Nick (overdue renderings) and Ouri (quiet)', rem.map(x => x.recipients));
-ok(rem.find(x => x.recipients[0] === 'ouri@elementcontract.com')?.payload.tasks[0].days_quiet >= 10, 'reminder payload has days quiet');
+const rem = (await db.query(`select o.recipients, o.subject, o.payload from init_outbox o where kind = 'reminder' order by recipients`)).rows;
+ok(n === 3 && rem.length === 3, '"Your week" queued for everyone with open tasks or a check-in due (Lisa, Nick, Ouri)', rem.map(x => x.recipients));
+const remOuri = rem.find(x => x.recipients[0] === 'ouri@elementcontract.com')?.payload;
+ok(remOuri?.tasks[0].days_quiet >= 10 && remOuri.tasks[0].needs_update && remOuri.checkins_due.length === 1, 'Your week: quiet task flagged; Ouri leads Loft so its check-in is due', remOuri);
+const remNick = rem.find(x => x.recipients[0] === 'nick.real@elementcontract.com');
+ok(remNick?.payload.tasks.length === 2 && remNick.payload.tasks.some(t => !t.needs_update), 'Your week lists tasks that are not behind too', remNick?.payload);
+ok(remNick?.subject.startsWith('Your initiatives this week'), 'subject is not a reprimand', remNick?.subject);
 ok((await one(`select public.init_queue_reminders() n`)).n === 0, 'reminders queue once per person per week');
 r = await asUser(db, admin, `select public.init_send_reminders_now() m`);
 ok(!r.error && r.rows[0].m.includes('queued'), 'admin sends reminders now', r.error);
@@ -279,8 +287,91 @@ r = await asUser(db, lisa, `select count(*)::int n from init_outbox`);
 ok(r.rows?.[0].n === 0, 'members cannot read the outbox');
 ok((await one(`select public.init_cron_tick() m`)).m.includes('functions_url'), 'cron tick runs; reports missing functions_url');
 
+// ── Check-ins, asks, digest note (007) ─────────────────────────
+console.log('\nCheck-ins + asks');
+const checkin = (user, project, health, summary, ask = null) =>
+  asUser(db, user, `select public.init_save_checkin($1, $2, $3, $4) id`, [project, health, summary, ask]);
+r = await checkin(lisa, loft, 'At risk', 'Renderings late; launch date at risk');
+ok(!r.error && r.rows[0].id, 'lead saves a check-in', r.error);
+const ck1 = r.rows?.[0].id;
+r = await checkin(nick, loft, 'On track', 'Looks fine');
+ok(r.error?.includes('leads and Initiatives Admins'), 'a non-lead (stakeholder) cannot check in', r.error);
+r = await checkin(viewer, loft, 'On track', 'x');
+ok(r.error, 'View Only cannot check in');
+r = await checkin(lisa, loft, 'Fine', 'x');
+ok(r.error?.includes('On track, At risk or Off track'), 'unknown health rejected');
+r = await checkin(lisa, loft, 'At risk', '   ');
+ok(r.error?.includes('one sentence'), 'empty summary rejected');
+r = await checkin(lisa, loft, 'Off track', 'Renderings now two weeks late', 'Approve paying James for a rush');
+ok(!r.error && r.rows[0].id === ck1, 'saving again this week replaces the same check-in', r.error);
+ok((await one(`select count(*)::int n from init_checkins where project_id = $1`, [loft])).n === 1 &&
+   (await one(`select count(*)::int n from init_activity where kind = 'checkin' and project_id = $1`, [loft])).n === 2, 'one row per week; each save logged');
+r = await asUser(db, lisa, `insert into public.init_checkins (project_id, week_start, health, summary) values ($1, current_date, 'On track', 'sneaky')`, [loft]);
+ok(r.error, 'check-ins are written only through init_save_checkin');
+b = (await asUser(db, viewer, `select latest_checkin, checkin_this_week from public.init_project_board where id = $1`, [loft])).rows[0];
+ok(b.latest_checkin?.health === 'Off track' && b.latest_checkin.ask && b.checkin_this_week, 'board shows the latest check-in', b);
+
+r = await asUser(db, lisa, `select public.init_answer_ask($1, 'Yes')`, [ck1]);
+ok(r.error?.includes('Only Initiatives Admins'), 'a lead cannot answer asks');
+const answeredBefore = (await one(`select count(*)::int n from init_outbox where kind = 'answered'`)).n;
+r = await asUser(db, admin, `select public.init_answer_ask($1, 'Approved, up to $2k') by`, [ck1]);
+ok(r.rows?.[0].by === 'Avery for matt', 'answer by someone other than the digest recipient is signed "for" them', r.rows?.[0] ?? r.error);
+const ans = (await db.query(`select recipients, payload from init_outbox where kind = 'answered' order by id desc limit 1`)).rows[0];
+ok((await one(`select count(*)::int n from init_outbox where kind = 'answered'`)).n === answeredBefore + 1 &&
+   ans.recipients.sort().join() === 'lisa@elementcontract.com,ouri@elementcontract.com' && ans.payload.answer === 'Approved, up to $2k',
+   'the project leads are emailed the answer', ans);
+d = (await asUser(db, viewer, `select public.init_digest() d`)).rows[0].d;
+ok(d.asks.length === 1 && d.asks[0].answer === 'Approved, up to $2k' && d.asks[0].answered_by === 'Avery for matt', 'digest lists the ask answered this week', d.asks);
+ok(d.data_quality.checkins_in === 1 && d.headline.off_track === 1, 'digest counts the check-in and its health', d.headline);
+r = await checkin(lisa, loft, 'Off track', 'Renderings now two weeks late', 'Approve paying James for a rush, and a new date');
+t = await one(`select answer, answered_by_name from init_checkins where id = $1`, [ck1]);
+ok(t.answer === null && t.answered_by_name === null, 'changing an answered ask clears the old answer');
+d = (await asUser(db, viewer, `select public.init_digest() d`)).rows[0].d;
+ok(d.asks.length === 1 && d.asks[0].answer === null && d.asks[0].ask.includes('new date'), 'digest lists the open ask');
+await asUser(db, admin, `select public.init_update_settings('{"digest_recipients": ["avery@elementcontract.com"]}')`);
+r = await asUser(db, admin, `select public.init_answer_ask($1, 'Yes to both') by`, [ck1]);
+ok(r.rows?.[0].by === 'Avery', 'the digest recipient answering signs with just their name', r.rows?.[0] ?? r.error);
+await asUser(db, admin, `select public.init_update_settings('{"digest_recipients": ["matt@elementcontract.com"]}')`);
+
+r = await asUser(db, lisa, `select public.init_save_digest_note(null, 'Hi Matt')`);
+ok(r.error?.includes('Only Initiatives Admins'), 'only admins write the digest note');
+r = await asUser(db, admin, `select public.init_save_digest_note(null, '  Raise the Loft date at Monday''s meeting.  ')`);
+d = (await asUser(db, viewer, `select public.init_digest() d`)).rows[0].d;
+ok(!r.error && d.note === "Raise the Loft date at Monday's meeting.", 'digest shows the week’s note', r.error ?? d.note);
+await asUser(db, admin, `select public.init_save_digest_note(null, '')`);
+d = (await asUser(db, viewer, `select public.init_digest() d`)).rows[0].d;
+ok(d.note === null, 'an empty note clears it');
+
+console.log('\nWaiting on a person, purpose, candidates to park');
+r = await asUser(db, nick, `update public.init_tasks set blocked_on_person = $2 where id = $1`, [tRender, pLisa]);
+ok(!r.error, 'assignee sets who the task is waiting on', r.error);
+tb = (await asUser(db, viewer, `select blocked_on_person_name, blocked_on from public.init_task_board where id = $1`, [tRender])).rows[0];
+ok(tb.blocked_on_person_name === 'Lisa' && tb.blocked_on === 'Riverstone', 'task board names the person, keeps the note', tb);
+a = await one(`select new_value from init_activity where kind = 'blocked_on' and task_id = $1 order by id desc limit 1`, [tRender]);
+ok(a?.new_value === 'Lisa — Riverstone', 'logged as "person — note"', a);
+d = (await asUser(db, viewer, `select public.init_digest() d`)).rows[0].d;
+ok(d.blocked[0]?.waiting_on === 'Lisa — Riverstone', 'digest shows who it is waiting on', d.blocked);
+r = await asUser(db, nick, `update public.init_tasks set status = 'In progress' where id = $1`, [tRender]);
+t = await one(`select blocked_on, blocked_on_person from init_tasks where id = $1`, [tRender]);
+ok(t.blocked_on === null && t.blocked_on_person === null, 'unblocking clears both');
+r = await asUser(db, lisa, `update public.init_projects set purpose = ' Launch Loft for spring ', success_measure = '20 orders by March' where id = $1`, [loft]);
+ok(!r.error && (await one(`select purpose from init_projects where id = $1`, [loft])).purpose === 'Launch Loft for spring', 'lead edits purpose + success measure (trimmed)', r.error);
+const remLisa = (await one(`select public.init_reminder_payload($1) p`, [pLisa])).p;
+ok(remLisa.checkins_due.map(x => x.code).join() === 'WMS-01', 'Your week: only projects without this week’s check-in are due', remLisa.checkins_due);
+await db.query(`update init_activity set at = now() - interval '30 days' where project_id = $1`, [wms]);
+await db.query(`update init_projects set created_at = now() - interval '40 days' where id = $1`, [wms]);
+d = (await asUser(db, viewer, `select public.init_digest() d`)).rows[0].d;
+ok(d.park_candidates.map(x => x.code).join() === 'WMS-01' && d.park_candidates[0].weeks_quiet >= 4, 'no movement for 3+ weeks → candidate to park', d.park_candidates);
+b = (await asUser(db, viewer, `select weeks_quiet from public.init_project_board where id = $1`, [wms])).rows[0];
+ok(b.weeks_quiet >= 4, 'board shows weeks quiet', b);
+pb = (await asUser(db, viewer, `select last_update_at from public.init_people_board where display_name = 'Nick'`)).rows[0];
+ok(pb.last_update_at, 'people board has the last update', pb);
+r = await asUser(db, null, `select public.init_save_checkin($1, 'On track', 'x', null)`, [loft]);
+ok(r.error?.includes('permission denied'), 'anon cannot call the check-in RPC');
+
 // ── Function permissions (004) ─────────────────────────────────
 console.log('\nFunction permissions');
+ok((await one(`select has_table_privilege('vitalai_reader', 'public.init_project_board', 'select') g`)).g, 'rebuilding the views keeps the reporting role\'s read access');
 r = await asUser(db, null, `select public.init_digest() d`);
 ok(r.error?.includes('permission denied'), 'anon cannot call init_digest', r.error);
 r = await asUser(db, null, `select public.init_my_access() a`);

@@ -83,6 +83,16 @@ export const fetchActivity = ({ projectId, limit = 300 } = {}) => {
   return run(q, 'fetchActivity')
 }
 
+// --- Check-ins, asks, digest note ---
+
+// A lead (or admin) saves this week's check-in for a project; saving again replaces it
+export const saveCheckin = (projectId, health, summary, ask) =>
+  rpc('init_save_checkin', { p_project_id: projectId, p_health: health, p_summary: summary, p_ask: ask || null })
+// Admins: answer a check-in's ask (empty takes the answer back). Resolves with the signature, e.g. "Lindsay for Matt Hall"
+export const answerAsk = (checkinId, answer) => rpc('init_answer_ask', { p_checkin_id: checkinId, p_answer: answer })
+// Admins: the note at the top of a week's digest (empty clears it)
+export const saveDigestNote = (weekStart, body) => rpc('init_save_digest_note', { p_week_start: weekStart, p_body: body })
+
 // --- People + logins (admin) ---
 
 // Everyone on the people list, including inactive (Admin → People)
@@ -106,12 +116,12 @@ export const fetchOutbox = () =>
 
 // --- Live updates ---
 
-// Calls onChange (debounced) when projects, leads, stakeholders, tasks, assignments or people change
+// Calls onChange (debounced) when projects, leads, stakeholders, tasks, assignments, people or check-ins change
 export function subscribeToChanges(onChange) {
   let timer = null
   const fire = () => { clearTimeout(timer); timer = setTimeout(onChange, 400) }
   const channel = supabase.channel('init-board')
-  for (const table of ['init_projects', 'init_project_leads', 'init_project_stakeholders', 'init_tasks', 'init_task_assignees', 'init_people'])
+  for (const table of ['init_projects', 'init_project_leads', 'init_project_stakeholders', 'init_tasks', 'init_task_assignees', 'init_people', 'init_checkins'])
     channel.on('postgres_changes', { event: '*', schema: 'public', table }, fire)
   channel.subscribe(status => { if (status === 'CHANNEL_ERROR') console.error('Realtime channel error — live updates disabled') })
   return () => { clearTimeout(timer); supabase.removeChannel(channel) }

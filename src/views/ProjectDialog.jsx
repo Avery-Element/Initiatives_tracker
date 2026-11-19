@@ -1,6 +1,6 @@
 // New / edit project. Admins edit everything, including who leads it and who the stakeholders
-// are; a project's leads can change its stage, summary, priority and target date (the database
-// enforces the same split).
+// are; a project's leads can change its stage, summary, purpose, success measure, priority and
+// target date (the database enforces the same split).
 import { useState, useRef, useLayoutEffect, useCallback } from "react";
 import { saveProject, setProjectPeople } from "../supabase.js";
 import { STATUSES, PRIORITIES, DEPARTMENTS, deptColor } from "../lib.js";
@@ -143,6 +143,7 @@ export default function ProjectDialog({ project, people, perms, onClose, onSaved
     leads: project?.lead_ids || [], stakeholders: project?.stakeholder_ids || [], stage: project?.stage || "Not started",
     priority: project?.priority || "", target_date: project?.target_date || "",
     department: project?.department || "",
+    purpose: project?.purpose || "", success_measure: project?.success_measure || "",
   }));
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
@@ -156,7 +157,8 @@ export default function ProjectDialog({ project, people, perms, onClose, onSaved
       setMsg(isNew ? "Give the project a name and pick its department." : "Give the project a name.");
       return;
     }
-    const lead = { stage: f.stage, summary: f.summary.trim() || null, priority: f.priority || null, target_date: f.target_date || null };
+    const lead = { stage: f.stage, summary: f.summary.trim() || null, priority: f.priority || null, target_date: f.target_date || null,
+                   purpose: f.purpose.trim() || null, success_measure: f.success_measure.trim() || null };
     // The color follows the department. Older projects with no department keep their color.
     const dept = f.department ? { department: f.department, color: deptColor(f.department) } : {};
     const fields = admin ? { ...lead, name: f.name.trim(), ...dept } : lead;
@@ -200,6 +202,15 @@ export default function ProjectDialog({ project, people, perms, onClose, onSaved
         <Field label="Summary" hint="one or two sentences">
           <textarea className="ta" id="pj-summary" rows={2} value={f.summary} onChange={set("summary")} />
         </Field>
+        <div className="grid2">
+          <Field label="Why we're doing it" hint="the problem or goal">
+            <textarea className="ta" id="pj-purpose" rows={2} value={f.purpose} onChange={set("purpose")} maxLength={600} />
+          </Field>
+          <Field label="How we'll know it worked" hint="a result you can check">
+            <textarea className="ta" id="pj-success" rows={2} value={f.success_measure} onChange={set("success_measure")} maxLength={600}
+              placeholder="e.g. 20 orders by March" />
+          </Field>
+        </div>
         {admin && (
           <div className="grid2">
             <PeopleSelect id="pj-leads" label="Leads" people={people} value={f.leads} placeholder="No lead"
