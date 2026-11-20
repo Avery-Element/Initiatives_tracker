@@ -148,6 +148,8 @@ export default function ProjectDialog({ project, people, perms, onClose, onSaved
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [confirmArchive, setConfirmArchive] = useState(false);
+  // Set once a new project's row is saved, so trying again updates it instead of creating a second one
+  const [createdId, setCreatedId] = useState(null);
   const set = (k) => (e) => setF(x => ({ ...x, [k]: e.target ? e.target.value : e }));
 
   const save = async (e) => {
@@ -164,7 +166,7 @@ export default function ProjectDialog({ project, people, perms, onClose, onSaved
     const fields = admin ? { ...lead, name: f.name.trim(), ...dept } : lead;
     setBusy(true);
     let r;
-    if (isNew) {
+    if (isNew && !createdId) {
       // Try the name's code, then CODE-2, CODE-3… if another project already has it
       const base = codeFromName(fields.name);
       for (let n = 1; n < 100; n++) {
@@ -172,12 +174,16 @@ export default function ProjectDialog({ project, people, perms, onClose, onSaved
         if (!r.error?.includes("init_projects_code_idx")) break;
       }
     } else {
-      r = await saveProject(project.id, fields);
+      r = await saveProject(project?.id ?? createdId, fields);
     }
     if (r.error) { setBusy(false); return setMsg(r.error); }
+    if (isNew) setCreatedId(r.data.id);
     if (admin) {
       const p = await setProjectPeople(r.data.id, f.leads, f.stakeholders.filter(id => !f.leads.includes(id)));
-      if (p.error) { setBusy(false); return setMsg(`Saved the project, but not its leads and stakeholders: ${p.error}`); }
+      if (p.error) {
+        setBusy(false);
+        return setMsg(`Saved the project, but not its leads and stakeholders: ${p.error}${isNew ? ". Click Save to try again." : ""}`);
+      }
     }
     setBusy(false);
     onSaved(isNew ? `Created ${fields.name}` : "Project saved");
@@ -232,7 +238,7 @@ export default function ProjectDialog({ project, people, perms, onClose, onSaved
         </div>
         {msg && <div className="banner err" style={{ marginTop: 0 }}>{msg}</div>}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-          <button className="btn" type="submit" disabled={busy}>{busy ? "Saving…" : isNew ? "Create project" : "Save"}</button>
+          <button className="btn" type="submit" disabled={busy}>{busy ? "Saving…" : isNew && !createdId ? "Create project" : "Save"}</button>
           <button className="btn ghost" type="button" onClick={onClose}>Cancel</button>
           {admin && !isNew && (confirmArchive
             ? <span className="confirm" style={{ marginLeft: "auto" }}>{project.archived_at ? "Restore it to the board?" : "Hide it from the board? History is kept."}

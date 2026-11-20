@@ -55,6 +55,8 @@ ok(r.html.includes('Waiting on Lisa — Updated models') && r.html.includes(`#ta
 ok(r.html.includes('Too much on the go?') && r.html.includes('quiet 4 weeks'), 'candidates to park');
 ok(r.html.includes('Last update') && r.html.includes('Oct 31') && !r.html.includes('%</td>') && !r.html.includes('Moved this week'), 'workload is counts only');
 ok(r.text.includes('ASKS FOR YOU') && r.text.includes('Lisa: 30 open') && r.text.includes('[Off track] Loft Chair launch'), 'plain-text version');
+const parked = render('digest', { ...digest, projects: [{ ...digest.projects[0], stage: 'Parked', health: null, checkin_current: false }] });
+ok(parked.text.includes('[Parked] Loft Chair launch') && !parked.text.includes('[No check-in] Loft Chair launch'), 'Parked project shows its stage, not "No check-in"');
 let empty = render('digest', { ...digest, note: null, asks: [], projects: [], blocked: [], past_target: [], park_candidates: [], people: [], app_url: null,
   headline: { moving: [], quiet: [] }, data_quality: {} });
 ok(empty.html.includes('Nothing asked of you this week.') && empty.html.includes('nothing moved') && !empty.html.includes('Open the tracker'), 'quiet week renders; no button without app_url');

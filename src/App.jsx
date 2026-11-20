@@ -21,7 +21,9 @@ const TABS = [
 ];
 // "#digest" → { tab: "digest" }; "#task/<id>" → { tab: "projects", kind: "task", id }
 const parseHash = () => {
-  const h = decodeURIComponent(location.hash.slice(1));
+  const raw = location.hash.slice(1);
+  let h;
+  try { h = decodeURIComponent(raw); } catch { h = raw; }   // a cut-off or garbled link shouldn't stop the app loading
   const m = h.match(/^(task|checkin|project)\/([\w-]+)$/);
   if (m) return { tab: "projects", kind: m[1], id: m[2] };
   return { tab: TABS.some(t => t.id === h) ? h : "projects" };

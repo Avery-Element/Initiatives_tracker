@@ -78,7 +78,9 @@ runs hourly. Admins see the outbox and its errors under **Admin → Email**.
 6. `supabase/migrations/006_init_department.sql`: a department per project (sets its color in the app)
 7. `supabase/migrations/007_init_checkins.sql`: weekly check-ins, asks + answers, digest note,
    purpose / success measure, "waiting on" a person, the rewritten digest and "Your week" email
-8. Optional: `supabase/seed/001_lindsay_tracker_oct30.sql` loads the six projects from Lindsay's
+8. `supabase/migrations/008_init_ready_to_close.sql`: "ready to close" projects (every task Done)
+   don't need a weekly check-in in the "Your week" email or the digest's counts
+9. Optional: `supabase/seed/001_lindsay_tracker_oct30.sql` loads the six projects from Lindsay's
    tracker (already loaded on the live project).
 
 The live project was migrated in steps (`init_001` … `init_005` in Supabase's migration list);
