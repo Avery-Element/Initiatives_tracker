@@ -141,11 +141,11 @@ export function renderDigest(p: Json): Rendered {
         : x.target_date ? muted(`target ${fmtDate(x.target_date)}`) : '';
       const stale = x.health && !x.checkin_current ? muted(' (last week)') : '';
       const showSummary = x.summary && x.stage !== 'Done';
-      body += row(`<div style="padding:5px 0;border-bottom:1px solid ${LINE}">${x.stage === 'Done' ? pill('Done') : healthPill(x.health)}${stale}
+      body += row(`<div style="padding:5px 0;border-bottom:1px solid ${LINE}">${x.stage === 'Done' || x.stage === 'Parked' ? pill(x.stage) : healthPill(x.health)}${stale}
         ${swatch(x.color)}${a(link(p.app_url, `project/${x.project_id}`), `<b style="color:${INK}">${esc(x.name)}</b>`)}
         ${muted(`· ${esc(x.lead || 'no lead')} · ${x.done} of ${x.total} tasks done`)}${when ? ' · ' + when : ''}
         ${showSummary ? `<div style="padding-left:2px;color:${INK2};font-size:13px">${esc(x.summary)}</div>` : ''}</div>`);
-      text.push(`  [${x.stage === 'Done' ? 'Done' : x.health || 'No check-in'}] ${x.name} (${x.lead || 'no lead'})${
+      text.push(`  [${x.stage === 'Done' || x.stage === 'Parked' ? x.stage : x.health || 'No check-in'}] ${x.name} (${x.lead || 'no lead'})${
         x.days_late ? `, ${x.days_late} days late` : ''}${showSummary ? ` — ${x.summary}` : ''}`);
     }
   }

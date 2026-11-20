@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import { setupSupabaseStubs, makeChecker, asUser } from './helpers.mjs';
 
 const ROOT = new URL('../../', import.meta.url);
-const MIGRATIONS = ['001_init_schema.sql', '002_init_access.sql', '003_init_email.sql', '004_init_hardening.sql', '005_init_project_people.sql', '006_init_department.sql', '007_init_checkins.sql'];
+const MIGRATIONS = ['001_init_schema.sql', '002_init_access.sql', '003_init_email.sql', '004_init_hardening.sql', '005_init_project_people.sql', '006_init_department.sql', '007_init_checkins.sql', '008_init_ready_to_close.sql'];
 
 const { ok, done } = makeChecker();
 const db = new PGlite();
@@ -366,6 +366,19 @@ b = (await asUser(db, viewer, `select weeks_quiet from public.init_project_board
 ok(b.weeks_quiet >= 4, 'board shows weeks quiet', b);
 pb = (await asUser(db, viewer, `select last_update_at from public.init_people_board where display_name = 'Nick'`)).rows[0];
 ok(pb.last_update_at, 'people board has the last update', pb);
+// ── Ready to close (008): every task Done → no check-in expected ──
+ok((await one(`select public.init_ready_to_close($1) r`, [wms])).r === false, 'a project with no tasks is not ready to close');
+const wmsTask = (await addTask(admin, 'Pick a vendor', { project: wms })).rows[0].id;
+const wmsStatus = (await db.query(`select id, status from init_tasks where project_id = $1`, [wms])).rows;
+const dqBefore = (await asUser(db, viewer, `select public.init_digest() d`)).rows[0].d.data_quality;
+await db.query(`update init_tasks set status = 'Done' where project_id = $1`, [wms]);
+ok((await one(`select public.init_reminder_payload($1) p`, [pLisa])).p.checkins_due.length === 0, 'Your week: a ready-to-close project needs no check-in');
+let dq = (await asUser(db, viewer, `select public.init_digest() d`)).rows[0].d.data_quality;
+ok(dq.checkins_expected === dqBefore.checkins_expected - 1 && !dq.missing.some(x => x.code === 'WMS-01'), 'digest: a ready-to-close project is not a missing check-in', dq);
+ok((await asUser(db, viewer, `select public.init_ready_to_close($1)`, [wms])).error?.includes('permission denied'), 'init_ready_to_close is internal only');
+for (const t of wmsStatus) await db.query(`update init_tasks set status = $2 where id = $1`, [t.id, t.status]);
+dq = (await asUser(db, viewer, `select public.init_digest() d`)).rows[0].d.data_quality;
+ok(dq.checkins_expected === dqBefore.checkins_expected, 'reopening a task brings the check-in back', dq);
 r = await asUser(db, null, `select public.init_save_checkin($1, 'On track', 'x', null)`, [loft]);
 ok(r.error?.includes('permission denied'), 'anon cannot call the check-in RPC');
 
