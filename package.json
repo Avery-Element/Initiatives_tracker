@@ -10,7 +10,8 @@
     "deploy": "vite build && npx --yes wrangler@4 deploy",
     "test:db": "node tests/db/initiatives.test.mjs",
     "test:email": "node --experimental-strip-types tests/functions/render.test.mts",
-    "test": "npm run test:db && npm run test:email"
+    "test": "npm run test:db && npm run test:email && npm run test:ui",
+    "test:ui": "node tests/ui/filters.test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.105.1",

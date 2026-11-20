@@ -15,6 +15,8 @@ const STATUS: Record<string, [string, string]> = {
 
 export const esc = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, c =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
+// The database sends a project's leads as "Lisa, Nick"
+const leadWord = (lead?: string | null) => (lead && lead.includes(', ') ? 'leads' : 'lead');
 
 // "Nov 2" from YYYY-MM-DD, without time-zone shifts
 export const fmtDate = (iso?: string | null) => {
@@ -52,49 +54,110 @@ ${body}
 </table></td></tr></table></body></html>`;
 }
 
-// ── Weekly digest ─────────────────────────────────────────────────────────────
-export function renderDigest(p: Json): Rendered {
-  const t = p.totals || {};
-  const range = `${fmtDate(p.week_start)} – ${fmtDate(p.week_end)}`;
-  const title = `${t.moved ?? 0} task${t.moved === 1 ? '' : 's'} moved forward, ${t.blocked ?? 0} blocked`;
-  const tiles = [
-    ['Moved this week', t.moved ?? 0, GREEN], ['Done this week', t.done_week ?? 0, '#0E8A6C'],
-    ['Blocked', t.blocked ?? 0, '#D63B2F'], ['Past due', t.overdue ?? 0, '#B87400'],
-  ];
-  let body = `<tr><td style="padding:18px 28px 4px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${
-    tiles.map(([k, v, c]) => `<td width="25%" style="padding:0 4px"><div style="border:1px solid ${LINE};border-radius:10px;padding:10px 12px">
-      <div style="font:600 11px Arial,sans-serif;letter-spacing:.05em;text-transform:uppercase;color:${INK2}">${k}</div>
-      <div style="font:700 24px Arial,sans-serif;color:${c}">${v}</div></div></td>`).join('')
-  }</tr></table></td></tr>`;
-  const text: string[] = [`Element Initiatives: week of ${range}`, title, ''];
+// Links into the app: #project/<id>, #task/<id>, #checkin/<projectId>
+const link = (base: string | null | undefined, hash: string) =>
+  (base ? `${String(base).replace(/#.*$/, '').replace(/\/$/, '')}/#${hash}` : null);
+const a = (url: string | null, label: string) => url ? `<a href="${esc(url)}" style="color:${GREEN};text-decoration:none">${label}</a>` : label;
+const HEALTH: Record<string, [string, string]> = {
+  'On track': ['#0E8A6C', '#D8F3EA'], 'At risk': ['#B87400', '#FCEFD6'], 'Off track': ['#D63B2F', '#FDE4E1'],
+};
+const healthPill = (h?: string | null) => {
+  const [fg, bg] = (h && HEALTH[h]) || ['#465449', '#EBEFEA'];
+  return `<span style="display:inline-block;padding:1px 8px;border-radius:99px;font-size:12px;font-weight:600;color:${fg};background:${bg};white-space:nowrap">${esc(h || 'No check-in')}</span>`;
+};
+const s_ = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+// "A, B, C and 4 more"
+const names = (list: string[] = [], max = 5) =>
+  list.length <= max ? list.join(', ') : `${list.slice(0, max).join(', ')} and ${list.length - max} more`;
 
-  body += h2('Activity by project');
-  text.push('ACTIVITY BY PROJECT');
-  if (!p.activity?.length) { body += row(muted('Nothing moved this week.')); text.push('Nothing moved this week.'); }
-  for (const pr of p.activity || []) {
-    body += row(`${swatch(pr.color)}<b>${esc(pr.name)}</b> ${muted(`· ${pr.moved} updated · now ${pr.pct}% done · lead ${esc(pr.lead || 'none')}`)}`);
-    text.push(`- ${pr.name}: ${pr.moved} updated, now ${pr.pct}% done`);
-    for (const tk of pr.tasks || []) {
-      body += row(`<div style="padding-left:16px">${pill(tk.status)} ${esc(tk.title)} ${muted('· ' + esc(who(tk.who)))}${
-        tk.note ? `<div style="color:${INK2};font-size:13px;padding-left:2px">“${esc(tk.note)}”</div>` : ''}</div>`);
-      text.push(`    ${tk.status}: ${tk.title} (${who(tk.who)})${tk.note ? ` — "${tk.note}"` : ''}`);
-    }
-    if (pr.moved > (pr.tasks?.length || 0)) {
-      body += row(`<div style="padding-left:16px">${muted(`and ${pr.moved - pr.tasks.length} more`)}</div>`);
-    }
+// ── Weekly digest ─────────────────────────────────────────────────────────────
+// Order: note, asks for Matt, the three-line headline, how current the data is, projects by
+// department with health, then blocked / past target / candidates to park, and workload counts.
+export function renderDigest(p: Json): Rendered {
+  const hl = p.headline || {}, dq = p.data_quality || {};
+  const range = `${fmtDate(p.week_start)} – ${fmtDate(p.week_end)}`;
+  const title = `${hl.on_track ?? 0} on track · ${hl.at_risk ?? 0} at risk · ${hl.off_track ?? 0} off track`;
+  const text: string[] = [`Element Initiatives: week of ${range}`, title, ''];
+  let body = '';
+
+  if (p.note) {
+    body += `<tr><td style="padding:18px 28px 4px"><div style="background:#F2F5F1;border-left:4px solid ${BRAND};border-radius:6px;padding:12px 14px;font:14px/1.5 Arial,sans-serif;color:${INK};white-space:pre-wrap">${esc(p.note)}</div></td></tr>`;
+    text.push('NOTE', p.note, '');
   }
-  if (p.idle?.length) {
-    body += row(`<div style="padding-top:6px">${muted('No updates this week: ' + p.idle.map((x: Json) => `${swatch(x.color)}${esc(x.name)}`).join(' &nbsp; '))}</div>`);
-    text.push(`No updates this week: ${p.idle.map((x: Json) => x.name).join(', ')}`);
+
+  // Asks for Matt
+  const asks: Json[] = p.asks || [];
+  const open = asks.filter(x => !x.answer);
+  body += h2(open.length ? `Asks for you (${open.length})` : 'Asks for you');
+  text.push('ASKS FOR YOU');
+  if (!asks.length) { body += row(muted('Nothing asked of you this week.')); text.push('Nothing asked of you this week.'); }
+  for (const x of asks) {
+    const url = link(p.app_url, `project/${x.project_id}`);   // admins answer on the project
+    const status = x.answer
+      ? muted(`Answered by ${esc(x.answered_by || 'an admin')}: `) + esc(x.answer)
+      : `${muted(x.days_open > 0 ? `open ${x.days_open} days · ` : '')}${a(url, 'Answer in the tracker')}`;
+    body += row(`<div style="padding:6px 0;border-bottom:1px solid ${LINE}">${swatch(x.color)}<b>${esc(x.name)}</b> ${muted(`· ${leadWord(x.lead)} ${esc(x.lead || 'none')}`)}<br>
+      <span style="padding-left:16px;display:inline-block">“${esc(x.ask)}”</span><br>
+      <span style="padding-left:16px">${status}</span></div>`);
+    text.push(`- ${x.name} (${x.lead || 'no lead'}): "${x.ask}"`,
+      x.answer ? `    Answered by ${x.answered_by}: ${x.answer}` : `    Answer: ${url ?? 'in the tracker'}`);
+  }
+
+  // Headline
+  body += h2('This week');
+  const moving: string[] = hl.moving || [], quiet: string[] = hl.quiet || [];
+  const lines: [string, string][] = [
+    ['Moving', moving.length ? `${s_(moving.length, 'project')}: ${names(moving)}` : 'nothing moved'],
+    ['Stuck', hl.blocked_tasks ? `${s_(hl.blocked_tasks, 'blocked task')} across ${s_(hl.blocked_projects, 'project')} (below)` : 'nothing blocked'],
+    ['Quiet', quiet.length ? `${s_(quiet.length, 'project')}: ${names(quiet)}` : 'none'],
+  ];
+  for (const [k, v] of lines) body += row(`<b>${k}:</b> ${esc(v)}`);
+  text.push('', 'THIS WEEK', ...lines.map(([k, v]) => `${k}: ${v}`));
+
+  // How current the picture is
+  const missing: Json[] = dq.missing || [], notHeard: string[] = dq.not_heard_from || [];
+  const dqParts = [
+    `${dq.checkins_in ?? 0} of ${dq.checkins_expected ?? 0} check-ins in${missing.length ? ` (missing: ${names(missing.map(m => m.name), 4)})` : ''}`,
+    dq.pct_open_touched == null ? null : `${dq.pct_open_touched}% of open tasks updated`,
+    notHeard.length ? `not heard from in 2 weeks: ${names(notHeard, 6)}` : null,
+  ].filter(Boolean) as string[];
+  body += row(`<div style="padding-top:8px;font-size:13px;color:${INK2}">${esc(dqParts.join(' · '))}</div>`);
+  text.push(dqParts.join(' · '));
+
+  // Projects by department
+  const projects: Json[] = p.projects || [];
+  if (projects.length) {
+    body += h2('Projects');
+    text.push('', 'PROJECTS');
+    let dept: string | undefined;
+    for (const x of projects) {
+      const d = x.department || 'No department';
+      if (d !== dept) {
+        dept = d;
+        body += row(`<div style="padding-top:10px;font:600 13px Arial,sans-serif;color:${INK2}">${esc(d)}</div>`);
+        text.push(`${d}:`);
+      }
+      const when = x.days_late ? `<span style="color:#D63B2F">${x.days_late} days past target</span>`
+        : x.target_date ? muted(`target ${fmtDate(x.target_date)}`) : '';
+      const stale = x.health && !x.checkin_current ? muted(' (last week)') : '';
+      const showSummary = x.summary && x.stage !== 'Done';
+      body += row(`<div style="padding:5px 0;border-bottom:1px solid ${LINE}">${x.stage === 'Done' ? pill('Done') : healthPill(x.health)}${stale}
+        ${swatch(x.color)}${a(link(p.app_url, `project/${x.project_id}`), `<b style="color:${INK}">${esc(x.name)}</b>`)}
+        ${muted(`· ${esc(x.lead || 'no lead')} · ${x.done} of ${x.total} tasks done`)}${when ? ' · ' + when : ''}
+        ${showSummary ? `<div style="padding-left:2px;color:${INK2};font-size:13px">${esc(x.summary)}</div>` : ''}</div>`);
+      text.push(`  [${x.stage === 'Done' ? 'Done' : x.health || 'No check-in'}] ${x.name} (${x.lead || 'no lead'})${
+        x.days_late ? `, ${x.days_late} days late` : ''}${showSummary ? ` — ${x.summary}` : ''}`);
+    }
   }
 
   if (p.blocked?.length) {
     body += h2('Blocked');
     text.push('', 'BLOCKED');
     for (const b of p.blocked) {
-      body += row(`${swatch(b.color)}${esc(b.title)} ${muted(`· ${esc(b.project)} · ${esc(who(b.who))}`)}<br>
-        <span style="padding-left:16px;color:#D63B2F">Waiting on ${esc(b.blocked_on || 'not specified')}</span> ${muted(`since ${fmtDate(b.since)}`)}`);
-      text.push(`- ${b.project}: ${b.title} — waiting on ${b.blocked_on || 'not specified'} since ${fmtDate(b.since)}`);
+      const on = b.waiting_on || b.blocked_on || 'not specified';
+      body += row(`${swatch(b.color)}${a(link(p.app_url, `task/${b.task_id}`), esc(b.title))} ${muted(`· ${esc(b.project)} · ${esc(who(b.who))}`)}<br>
+        <span style="padding-left:16px;color:#D63B2F">Waiting on ${esc(on)}</span> ${muted(`since ${fmtDate(b.since)}`)}`);
+      text.push(`- ${b.project}: ${b.title} — waiting on ${on} since ${fmtDate(b.since)}`);
     }
   }
   if (p.past_target?.length) {
@@ -105,26 +168,26 @@ export function renderDigest(p: Json): Rendered {
       text.push(`- ${x.name}: target ${fmtDate(x.target_date)}, ${x.open} of ${x.total} open`);
     }
   }
-  if (p.quiet?.length) {
-    body += h2(`In progress, no update in ${p.stale_days}+ days`);
-    text.push('', `IN PROGRESS, NO UPDATE IN ${p.stale_days}+ DAYS`);
-    for (const q of p.quiet.slice(0, 10)) {
-      body += row(`${swatch(q.color)}${esc(q.title)} ${muted(`· ${esc(q.project)} · ${esc(who(q.who))} · ${q.last_at ? 'last ' + fmtDate(q.last_at) : 'never updated'}`)}`);
-      text.push(`- ${q.title} (${q.project}, ${who(q.who)})`);
+  if (p.park_candidates?.length) {
+    body += h2('Too much on the go?');
+    body += row(muted('No movement in 3+ weeks. Worth deciding whether to park or close these.'));
+    text.push('', 'TOO MUCH ON THE GO? (no movement in 3+ weeks)');
+    for (const x of p.park_candidates) {
+      body += row(`${swatch(x.color)}<b>${esc(x.name)}</b> ${muted(`· ${esc(x.lead || 'no lead')} · quiet ${x.weeks_quiet} weeks`)}`);
+      text.push(`- ${x.name} (${x.lead || 'no lead'}): quiet ${x.weeks_quiet} weeks`);
     }
-    if (p.quiet.length > 10) { body += row(muted(`and ${p.quiet.length - 10} more`)); text.push(`and ${p.quiet.length - 10} more`); }
   }
   if (p.people?.length) {
     body += h2('Workload');
-    text.push('', 'WORKLOAD (open · blocked · % of open tasks updated this week)');
-    const th = (s: string, right = false) => `<td style="padding:6px 8px;font:600 12px Arial,sans-serif;color:${INK2};border-bottom:1px solid ${LINE};text-align:${right ? 'right' : 'left'}">${s}</td>`;
-    const td = (s: string, right = false, color = INK) => `<td style="padding:6px 8px;font:14px Arial,sans-serif;color:${color};border-bottom:1px solid ${LINE};text-align:${right ? 'right' : 'left'}">${s}</td>`;
+    text.push('', 'WORKLOAD (open · blocked · done this week)');
+    const th = (v: string, right = false) => `<td style="padding:6px 8px;font:600 12px Arial,sans-serif;color:${INK2};border-bottom:1px solid ${LINE};text-align:${right ? 'right' : 'left'}">${v}</td>`;
+    const td = (v: string, right = false, color = INK) => `<td style="padding:6px 8px;font:14px Arial,sans-serif;color:${color};border-bottom:1px solid ${LINE};text-align:${right ? 'right' : 'left'}">${v}</td>`;
     body += `<tr><td style="padding:4px 28px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-      <tr>${th('Person')}${th('Open', true)}${th('Blocked', true)}${th('Moved this week', true)}</tr>
+      <tr>${th('Person')}${th('Open', true)}${th('Blocked', true)}${th('Done this week', true)}${th('Last update', true)}</tr>
       ${p.people.map((x: Json) => `<tr>${td(esc(x.name))}${td(String(x.open), true)}${td(String(x.blocked), true, x.blocked ? '#D63B2F' : INK)}${
-        td(x.pct == null ? '—' : x.pct + '%', true, x.pct === 0 ? '#A86200' : INK)}</tr>`).join('')}
+        td(String(x.done_week), true)}${td(x.last_update ? fmtDate(x.last_update) : '—', true, INK2)}</tr>`).join('')}
     </table></td></tr>`;
-    for (const x of p.people) text.push(`- ${x.name}: ${x.open} open · ${x.blocked} blocked · ${x.pct == null ? '—' : x.pct + '%'}`);
+    for (const x of p.people) text.push(`- ${x.name}: ${x.open} open · ${x.blocked} blocked · ${x.done_week} done`);
   }
   body += button(p.app_url, 'Open the tracker');
   if (p.app_url) text.push('', `Open the tracker: ${p.app_url}`);
@@ -134,26 +197,70 @@ export function renderDigest(p: Json): Rendered {
   };
 }
 
-// ── Reminder to one person ────────────────────────────────────────────────────
+// ── "Your week": one person's weekly email ───────────────────────────────────
+// Every open task (the overdue / quiet ones first), and for leads, the check-ins still due.
 export function renderReminder(p: Json): Rendered {
-  const n = p.tasks?.length || 0;
+  const tasks: Json[] = p.tasks || [], due: Json[] = p.checkins_due || [];
+  const need = tasks.filter(t => t.needs_update), rest = tasks.filter(t => !t.needs_update);
   const first = String(p.name || '').split(' ')[0] || 'there';
-  let body = row(`<div style="padding-top:16px">Hi ${esc(first)}, ${n === 1 ? 'one of your initiative tasks needs' : `${n} of your initiative tasks need`} an update. A status change or a quick note is enough.</div>`);
-  const text = [`Hi ${first},`, '', `${n} of your initiative tasks need an update. A status change or a quick note is enough.`, ''];
-  for (const t of p.tasks || []) {
-    const why = t.overdue ? `<span style="color:#D63B2F;font-weight:600">due ${fmtDate(t.due_date)}</span>`
-      : muted(t.last_at ? `no update in ${t.days_quiet} days` : 'never updated');
-    body += row(`<div style="padding:6px 0;border-bottom:1px solid ${LINE}">${swatch(t.color)}<b>${esc(t.title)}</b><br>
-      <span style="padding-left:16px">${pill(t.status)} ${muted(esc(t.project))} · ${why}${t.blocked_on ? muted(` · waiting on ${esc(t.blocked_on)}`) : ''}</span></div>`);
-    text.push(`- ${t.title} (${t.project}) — ${t.status}, ${t.overdue ? 'due ' + fmtDate(t.due_date) : t.last_at ? `no update in ${t.days_quiet} days` : 'never updated'}`);
+  const sub = [tasks.length ? s_(tasks.length, 'open task') : '', due.length ? `${s_(due.length, 'check-in')} due` : '']
+    .filter(Boolean).join(' · ');
+  const asks = [need.length ? `${need.length === 1 ? 'one task needs' : `${need.length} tasks need`} an update` : '',
+                due.length ? `${due.length === 1 ? 'one project needs its' : `${due.length} projects need their`} weekly check-in` : '']
+    .filter(Boolean).join(', and ');
+  const intro = asks ? `here's your week. ${asks[0].toUpperCase()}${asks.slice(1)}.` : `here's your week. Everything is up to date, thanks!`;
+  let body = row(`<div style="padding-top:16px">Hi ${esc(first)}, ${esc(intro)}</div>`);
+  const text = [`Hi ${first},`, '', intro, ''];
+
+  if (due.length) {
+    body += h2('Check-in due');
+    body += row(muted('You lead these. One check-in each: on track, at risk or off track, one sentence, and anything you need from Matt.'));
+    text.push('CHECK-IN DUE');
+    for (const c of due) {
+      const url = link(p.app_url, `checkin/${c.project_id}`);
+      const last = c.last_health ? `<br><span style="padding-left:16px">${muted('Last time: ')}${healthPill(c.last_health)} ${muted(esc(c.last_summary || ''))}</span>` : '';
+      body += row(`<div style="padding:6px 0;border-bottom:1px solid ${LINE}">${swatch(c.color)}<b>${esc(c.name)}</b> &nbsp;${a(url, 'Check in →')}${last}</div>`);
+      text.push(`- ${c.name}${url ? `: ${url}` : ''}`);
+    }
   }
-  body += button(p.app_url, 'Update my tasks');
-  if (p.app_url) text.push('', `Update your tasks: ${p.app_url}`);
+  const taskRow = (t: Json) => {
+    const why = t.overdue ? `<span style="color:#D63B2F;font-weight:600">due ${fmtDate(t.due_date)}</span>`
+      : t.needs_update ? muted(t.last_at ? `no update in ${t.days_quiet} days` : 'never updated')
+      : t.due_date ? muted(`due ${fmtDate(t.due_date)}`) : '';
+    return row(`<div style="padding:6px 0;border-bottom:1px solid ${LINE}">${swatch(t.color)}${a(link(p.app_url, `task/${t.task_id}`), `<b style="color:${INK}">${esc(t.title)}</b>`)}<br>
+      <span style="padding-left:16px">${pill(t.status)} ${muted(esc(t.project))}${why ? ' · ' + why : ''}${t.blocked_on ? muted(` · waiting on ${esc(t.blocked_on)}`) : ''}</span></div>`);
+  };
+  const taskText = (t: Json) => `- ${t.title} (${t.project}) — ${t.status}${
+    t.overdue ? ', due ' + fmtDate(t.due_date) : t.needs_update ? (t.last_at ? `, no update in ${t.days_quiet} days` : ', never updated') : ''}`;
+  if (need.length) {
+    body += h2('Needs an update');
+    body += row(muted('A status change or a quick note is enough.'));
+    text.push('', 'NEEDS AN UPDATE');
+    for (const t of need) { body += taskRow(t); text.push(taskText(t)); }
+  }
+  if (rest.length) {
+    body += h2(need.length ? 'The rest of your tasks' : 'Your tasks');
+    text.push('', need.length ? 'THE REST OF YOUR TASKS' : 'YOUR TASKS');
+    for (const t of rest) { body += taskRow(t); text.push(taskText(t)); }
+  }
+  body += button(p.app_url, 'Open the tracker');
+  if (p.app_url) text.push('', `Open the tracker: ${p.app_url}`);
   return {
-    html: frame('Your tasks need an update', `${n} task${n === 1 ? '' : 's'}`, body,
-      `Reminders go out weekly for tasks that are past due or haven't been updated in ${p.stale_days} days.`),
+    html: frame('Your initiatives this week', sub, body,
+      `Sent weekly to everyone with open initiative tasks or a check-in due. A task needs an update when it's past due or hasn't changed in ${p.stale_days} days.`),
     text: text.join('\n'),
   };
+}
+
+// ── An ask was answered ───────────────────────────────────────────────────────
+export function renderAnswered(p: Json): Rendered {
+  const url = link(p.app_url, `project/${p.project_id}`);
+  let body = row(`<div style="padding-top:16px">${swatch(p.color)}<b>${esc(p.project)}</b> ${muted(`· check-in for the week of ${fmtDate(p.week_start)}`)}</div>`);
+  body += row(`<div style="padding-top:10px">${muted('You asked:')}<br>“${esc(p.ask)}”</div>`);
+  body += row(`<div style="padding-top:10px">${muted(`${esc(p.by)} answered:`)}<br><b>${esc(p.answer)}</b></div>`);
+  body += button(url, 'Open the project');
+  const text = [`${p.by} answered your ask on ${p.project}.`, '', `You asked: "${p.ask}"`, `Answer: ${p.answer}`, url ? `\n${url}` : ''];
+  return { html: frame(`${p.by} answered your ask`, p.project || '', body, 'Element Initiatives Tracker'), text: text.join('\n') };
 }
 
 // ── "You're on a task" ────────────────────────────────────────────────────────
@@ -162,8 +269,8 @@ export function renderAssigned(p: Json): Rendered {
   const first = String(p.name || '').split(' ')[0] || 'there';
   let body = row(`<div style="padding-top:16px">Hi ${esc(first)}, ${esc(p.by || 'an admin')} added you to a task.</div>`);
   body += row(`<div style="padding:10px 0">${swatch(t.color)}<b>${esc(t.title)}</b><br>
-    <span style="padding-left:16px">${pill(t.status || 'Not started')} ${muted(esc(t.project))}${t.due_date ? muted(` · due ${fmtDate(t.due_date)}`) : ''}${t.lead ? muted(` · lead ${esc(t.lead)}`) : ''}</span></div>`);
-  body += button(p.app_url, 'Open the task');
+    <span style="padding-left:16px">${pill(t.status || 'Not started')} ${muted(esc(t.project))}${t.due_date ? muted(` · due ${fmtDate(t.due_date)}`) : ''}${t.lead ? muted(` · ${leadWord(t.lead)} ${esc(t.lead)}`) : ''}</span></div>`);
+  body += button(t.id ? link(p.app_url, `task/${t.id}`) : p.app_url, 'Open the task');
   const text = [`Hi ${first},`, '', `${p.by || 'An admin'} added you to "${t.title}" (${t.project}).`,
     t.due_date ? `Due ${fmtDate(t.due_date)}.` : '', p.app_url ? `Open it: ${p.app_url}` : ''].filter(Boolean);
   return { html: frame("You're on a task", t.project || '', body, 'Element Initiatives Tracker'), text: text.join('\n') };
@@ -181,6 +288,7 @@ export function render(kind: string, payload: Json): Rendered {
     case 'digest': return renderDigest(payload);
     case 'reminder': return renderReminder(payload);
     case 'assigned': return renderAssigned(payload);
+    case 'answered': return renderAnswered(payload);
     case 'test': return renderTest(payload);
     default: throw new Error(`Unknown email kind: ${kind}`);
   }

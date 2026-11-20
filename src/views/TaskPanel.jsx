@@ -1,6 +1,6 @@
-// Task details: status, what it's blocked on, notes and the full history.
-// People on the task can change the status and add notes. The project lead and admins can
-// also edit the title, due date, assignees and "also involved", or delete the task.
+// Task details: status, who or what it's waiting on, notes and the full history.
+// People on the task can change the status, set what it's waiting on and add notes. The project's
+// leads and admins can also edit the title, due date, assignees and outside parties, or delete it.
 import { useState, useEffect, useCallback } from "react";
 import { updateTask, deleteTask, setAssignees, addNote, fetchTaskActivity } from "../supabase.js";
 import { fmtDate, fmtWhen } from "../lib.js";
@@ -28,6 +28,7 @@ export default function TaskPanel({ task, data, perms, onClose, onChanged, onErr
   const [activity, setActivity] = useState(null);
   const [note, setNote] = useState("");
   const [blockedOn, setBlockedOn] = useState(task.blocked_on || "");
+  const [blockedPerson, setBlockedPerson] = useState(task.blocked_on_person || "");
   const [edit, setEdit] = useState(null);       // { title, due_date, others, assignees } while editing
   const [busy, setBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -37,7 +38,10 @@ export default function TaskPanel({ task, data, perms, onClose, onChanged, onErr
     if (!r.error) setActivity(r.data);
   }, [task.id]);
   useEffect(() => { loadActivity(); }, [loadActivity, task.updated_at, task.latest_note_at]);
-  useEffect(() => { setBlockedOn(task.blocked_on || ""); }, [task.blocked_on]);
+  useEffect(() => { setBlockedOn(task.blocked_on || ""); setBlockedPerson(task.blocked_on_person || ""); }, [task.blocked_on, task.blocked_on_person]);
+  const waiting = { blocked_on: blockedOn.trim() || null, blocked_on_person: blockedPerson || null };
+  const waitingChanged = blockedOn !== (task.blocked_on || "") || blockedPerson !== (task.blocked_on_person || "");
+  const waitingText = [task.blocked_on_person_name, task.blocked_on].filter(Boolean).join(" — ");
 
   const act = async (fn, okMsg) => {
     setBusy(true);
@@ -49,8 +53,8 @@ export default function TaskPanel({ task, data, perms, onClose, onChanged, onErr
     return true;
   };
 
-  const setStatus = (status) => act(() => updateTask(task.id, status === "Blocked" ? { status, blocked_on: blockedOn.trim() || null } : { status }), `Status: ${status}`);
-  const saveBlocked = () => act(() => updateTask(task.id, { blocked_on: blockedOn.trim() || null }), "Saved");
+  const setStatus = (status) => act(() => updateTask(task.id, status === "Blocked" ? { status, ...waiting } : { status }), `Status: ${status}`);
+  const saveBlocked = () => act(() => updateTask(task.id, waiting), "Saved");
   const postNote = async (e) => {
     e.preventDefault();
     if (!note.trim()) return;
@@ -77,7 +81,7 @@ export default function TaskPanel({ task, data, perms, onClose, onChanged, onErr
       <div className="panelhead">
         <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
           <span className="small muted" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-            <Swatch color={task.project_color} small /> {task.project_name}{project?.lead_name ? ` · lead ${project.lead_name}` : ""}
+            <Swatch color={task.project_color} small /> {task.project_name}{project?.lead_name ? ` · ${project.lead_names.length > 1 ? "leads" : "lead"} ${project.lead_name}` : ""}
           </span>
           <h3>{task.title}</h3>
         </div>
@@ -92,19 +96,25 @@ export default function TaskPanel({ task, data, perms, onClose, onChanged, onErr
             </Field>
             <Field label="Due"><span className={task.overdue ? "late" : ""}>{task.due_date ? fmtDate(task.due_date) : "No due date"}</span></Field>
             <Field label="People on it"><span>{task.assignee_names.join(", ") || "Unassigned"}</span></Field>
-            <Field label="Also involved"><span>{task.others || "—"}</span></Field>
+            <Field label="Outside parties"><span>{task.others || "—"}</span></Field>
           </div>
           {(task.status === "Blocked" || canUpdate) && (
-            <Field label="Waiting on" hint={task.status === "Blocked" ? "" : "fill this in when you mark it Blocked"}>
+            <Field label="Waiting on" hint={task.status === "Blocked" ? "a person, an outside party, or both" : "fill this in when you mark it Blocked"}>
               {canUpdate
-                ? <div style={{ display: "flex", gap: 8 }}>
-                    <input className="inp w100" id="tp-blocked" value={blockedOn} onChange={e => setBlockedOn(e.target.value)} placeholder="Who or what is this waiting on?" />
-                    {blockedOn !== (task.blocked_on || "") && <button className="btn sm" onClick={saveBlocked} disabled={busy}>Save</button>}
+                ? <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <select className="sel" id="tp-blocked-person" value={blockedPerson} onChange={e => setBlockedPerson(e.target.value)}
+                      aria-label="Person it's waiting on" style={{ flex: "1 1 150px" }}>
+                      <option value="">No one on the list</option>
+                      {data.assignable.map(p => <option key={p.id} value={p.id}>{p.display_name}</option>)}
+                    </select>
+                    <input className="inp" id="tp-blocked" value={blockedOn} onChange={e => setBlockedOn(e.target.value)} style={{ flex: "2 1 200px" }}
+                      placeholder={blockedPerson ? "What for? (optional)" : "Outside party or note, e.g. Riverstone quote"} aria-label="Waiting on: outside party or note" />
+                    {waitingChanged && <button className="btn sm" onClick={saveBlocked} disabled={busy}>Save</button>}
                   </div>
-                : <span>{task.blocked_on || "—"}</span>}
+                : <span>{waitingText || "—"}</span>}
             </Field>
           )}
-          {!canUpdate && perms.canWrite && <p className="small muted">Only people on this task, the project lead and admins can update it.</p>}
+          {!canUpdate && perms.canWrite && <p className="small muted">Only people on this task, the project's leads and admins can update it.</p>}
           {canManage && (
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <button className="btn ghost sm" onClick={() => setEdit({ title: task.title, due_date: task.due_date || "", others: task.others || "", assignees: [...task.assignee_ids] })}>Edit task</button>
@@ -121,7 +131,7 @@ export default function TaskPanel({ task, data, perms, onClose, onChanged, onErr
           <Field label="Title"><input className="inp w100" id="tp-title" value={edit.title} onChange={e => setEdit({ ...edit, title: e.target.value })} /></Field>
           <div className="grid2">
             <Field label="Due date"><input className="inp w100" type="date" id="tp-due" value={edit.due_date} onChange={e => setEdit({ ...edit, due_date: e.target.value })} /></Field>
-            <Field label="Also involved" hint="outside parties"><input className="inp w100" id="tp-others" value={edit.others} onChange={e => setEdit({ ...edit, others: e.target.value })} placeholder="Riverstone, James" /></Field>
+            <Field label="Outside parties" hint="not on the people list"><input className="inp w100" id="tp-others" value={edit.others} onChange={e => setEdit({ ...edit, others: e.target.value })} placeholder="Riverstone, James" /></Field>
           </div>
           <Field label="People on it">
             <div className="checks">

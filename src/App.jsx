@@ -1,15 +1,17 @@
 // Initiatives Tracker shell: sign-in routing (same flow as the other Element apps), header,
-// summary tiles, tabs, live data, and the permission helpers every screen uses.
+// summary tiles, tabs, live data, the permission helpers every screen uses, and deep links from
+// emails: #task/<id> opens a task, #checkin/<projectId> opens a check-in, #project/<id> shows a project.
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { supabase, loginName, fetchMyAccess, logSignIn, fetchProjects, fetchTasks, fetchPeople,
          fetchAssignable, subscribeToChanges } from "./supabase.js";
 import { LoginPage, SetPasswordForm, NoAccessPage } from "./auth.jsx";
-import { fmtDate, plural } from "./lib.js";
+import { fmtDate, plural, currentHealth } from "./lib.js";
 import ProjectsView from "./views/ProjectsView.jsx";
 import PeopleView from "./views/PeopleView.jsx";
 import DigestView from "./views/DigestView.jsx";
 import AdminView from "./views/AdminView.jsx";
 import TaskPanel from "./views/TaskPanel.jsx";
+import CheckinDialog from "./views/CheckinDialog.jsx";
 
 const TABS = [
   { id: "projects", label: "Projects" },
@@ -17,7 +19,13 @@ const TABS = [
   { id: "digest", label: "Weekly digest" },
   { id: "admin", label: "Admin", admin: true },
 ];
-const tabFromHash = () => { const h = location.hash.slice(1); return TABS.some(t => t.id === h) ? h : "projects"; };
+// "#digest" → { tab: "digest" }; "#task/<id>" → { tab: "projects", kind: "task", id }
+const parseHash = () => {
+  const h = decodeURIComponent(location.hash.slice(1));
+  const m = h.match(/^(task|checkin|project)\/([\w-]+)$/);
+  if (m) return { tab: "projects", kind: m[1], id: m[2] };
+  return { tab: TABS.some(t => t.id === h) ? h : "projects" };
+};
 const loadingScreen = <div className="loading">Loading…</div>;
 
 export default function App() {
@@ -26,7 +34,10 @@ export default function App() {
   const [access, setAccess] = useState(null);
   const [passwordRecovery, setPasswordRecovery] = useState(false);
   const [sessionExpired, setSessionExpired] = useState(false);
-  const [tab, setTab] = useState(tabFromHash);
+  const [tab, setTab] = useState(() => parseHash().tab);
+  const [deepLink, setDeepLink] = useState(() => (parseHash().kind ? parseHash() : null));
+  const [checkinFor, setCheckinFor] = useState(null);     // project id
+  const [focusProject, setFocusProject] = useState(null); // project id to open and scroll to
   const [data, setData] = useState(null);           // { projects, tasks, people, assignable }
   const [error, setError] = useState(null);
   const [toast, setToast] = useState(null);
@@ -71,7 +82,7 @@ export default function App() {
   const handleLogout = async () => { intentionalLogoutRef.current = true; await supabase.auth.signOut(); };
 
   useEffect(() => {
-    const onHash = () => setTab(tabFromHash());
+    const onHash = () => { const h = parseHash(); setTab(h.tab); if (h.kind) setDeepLink(h); };
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
@@ -103,7 +114,7 @@ export default function App() {
   // Permission helpers: mirror the database rules so the UI only offers what will work.
   // The database enforces them regardless.
   const perms = useMemo(() => {
-    const leadOf = new Set((data?.projects || []).filter(p => myPerson && p.lead_person === myPerson).map(p => p.id));
+    const leadOf = new Set((data?.projects || []).filter(p => myPerson && p.lead_ids?.includes(myPerson)).map(p => p.id));
     const leads = (projectId) => isAdmin || (canWrite && leadOf.has(projectId));
     return {
       isAdmin, canWrite, myPerson, leads,
@@ -111,6 +122,17 @@ export default function App() {
       canEditProject: (p) => leads(p.id),
     };
   }, [data, myPerson, isAdmin, canWrite]);
+
+  // Deep links wait for the data, then open what they point at and tidy the address bar
+  useEffect(() => {
+    if (!deepLink || !data) return;
+    const { kind, id } = deepLink;
+    if (kind === "task") setOpenTaskId(id);
+    else if (kind === "checkin" && perms.leads(id)) setCheckinFor(id);
+    else setFocusProject(id);
+    setDeepLink(null);
+    history.replaceState(null, "", "#projects");
+  }, [deepLink, data, perms]);
 
   // ── routing ──
   if (!authChecked) return loadingScreen;
@@ -126,14 +148,16 @@ export default function App() {
   const live = data.projects.filter(p => !p.archived_at);
   const liveIds = new Set(live.map(p => p.id));
   const tasks = data.tasks.filter(t => liveIds.has(t.project_id));
-  const done = tasks.filter(t => t.status === "Done").length;
+  const active = live.filter(p => p.stage !== "Done" && p.stage !== "Parked");
+  const health = (h) => active.filter(p => currentHealth(p) === h).length;
   const blocked = tasks.filter(t => t.status === "Blocked").length;
   const overdue = tasks.filter(t => t.overdue).length;
   const moved = tasks.filter(t => t.moved_this_week).length;
-  const quietPeople = data.people.filter(p => p.open_count > 0 && p.moved_this_week === 0).length;
+  const checkedIn = active.filter(p => p.checkin_this_week).length;
   const openTask = openTaskId && data.tasks.find(t => t.id === openTaskId);
+  const checkinProject = checkinFor && live.find(p => p.id === checkinFor);
   const viewProps = { data, access, perms, onChanged: reload, onError: setError, notify, openTask: setOpenTaskId,
-                      personFilter, setPersonFilter, go };
+                      personFilter, setPersonFilter, go, openCheckin: setCheckinFor, focusProject, setFocusProject };
 
   return (
     <>
@@ -158,14 +182,14 @@ export default function App() {
         )}
 
         <section className="summary" aria-label="Summary">
-          <div className="stat c1"><span className="k">Active projects</span><span className="v">{live.filter(p => p.stage !== "Done").length}</span>
+          <div className="stat c1" title="Projects that aren't Done or Parked"><span className="k">Active projects</span><span className="v">{active.length}</span>
             <span className="d">{plural(live.filter(p => p.past_target).length, "past target date", "past target date")}</span></div>
-          <div className="stat c2"><span className="k">Tasks done</span><span className="v">{done} <small>of {tasks.length}</small></span>
-            <span className="d">{tasks.length ? Math.round((done / tasks.length) * 100) : 0}% complete overall</span></div>
-          <div className="stat c3"><span className="k">Needs attention</span><span className="v">{blocked + overdue}</span>
+          <div className="stat c2" title="From each lead's latest check-in (this week or last)"><span className="k">On track</span><span className="v">{health("On track")} <small>of {active.length}</small></span>
+            <span className="d">{health("At risk")} at risk · {health("Off track")} off track</span></div>
+          <div className="stat c3" title="Blocked tasks, plus open tasks past their due date"><span className="k">Needs attention</span><span className="v">{blocked + overdue}</span>
             <span className="d">{blocked} blocked · {overdue} past due</span></div>
-          <div className="stat c4"><span className="k">Updated this week</span><span className="v">{moved}</span>
-            <span className="d">Since {fmtDate(access.week_start)} · {plural(quietPeople, "person", "people")} with no updates</span></div>
+          <div className="stat c4" title="Active projects whose lead has checked in since Monday"><span className="k">Check-ins this week</span><span className="v">{checkedIn} <small>of {active.length}</small></span>
+            <span className="d">Since {fmtDate(access.week_start)} · {plural(moved, "task")} updated</span></div>
         </section>
 
         {tab === "projects" && <ProjectsView {...viewProps} />}
@@ -175,6 +199,8 @@ export default function App() {
       </main>
 
       {openTask && <TaskPanel task={openTask} {...viewProps} onClose={() => setOpenTaskId(null)} />}
+      {checkinProject && <CheckinDialog project={checkinProject} access={access} onClose={() => setCheckinFor(null)} onError={setError}
+        onSaved={(msg) => { setCheckinFor(null); notify(msg); reload(); }} />}
       {toast && <div className="toast" role="status">{toast}</div>}
     </>
   );
