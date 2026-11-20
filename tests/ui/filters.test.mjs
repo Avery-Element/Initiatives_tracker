@@ -1,6 +1,6 @@
 // Projects screen filter rules in src/lib.js (pure functions, no browser).
 //   npm run test:ui
-import { startFilter, filterBoard } from '../../src/lib.js';
+import { startFilter, filterBoard, readyToClose } from '../../src/lib.js';
 
 let pass = 0, fail = 0;
 const ok = (c, msg) => { if (c) { pass++; console.log('  ok  ', msg); } else { fail++; console.log('  FAIL', msg); } };
@@ -52,6 +52,13 @@ ok(ids(attn.projects) === 'late,none,task', 'Needs attention = past target + blo
 
 const other = filterBoard({ projects, tasksByProject, filter: 'all', personId: OTHER });
 ok(ids(other.projects) === 'led,none,task', 'a person picked from the dropdown shows their work');
+
+console.log('readyToClose');
+ok(readyToClose({ stage: 'In progress', task_count: 4, done_count: 4 }), 'open project with every task Done is ready to close');
+ok(!readyToClose({ stage: 'In progress', task_count: 4, done_count: 3 }), 'a task still open: not ready');
+ok(!readyToClose({ stage: 'In progress', task_count: 0, done_count: 0 }), 'no tasks: not ready');
+ok(!readyToClose({ stage: 'Done', task_count: 4, done_count: 4 }), 'stage already Done: not flagged');
+ok(!readyToClose({ stage: 'Parked', task_count: 2, done_count: 2 }), 'Parked: not flagged');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

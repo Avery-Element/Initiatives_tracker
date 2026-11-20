@@ -3,7 +3,7 @@
 // tasks; change a task's status right from the list.
 import { useState, useMemo, useEffect, useRef } from "react";
 import { addTask, updateTask, setAssignees } from "../supabase.js";
-import { fmtDate, daysBetween, plural, localDay, DEPARTMENTS, currentHealth, isActiveProject, startFilter, filterBoard, MINE_HELP } from "../lib.js";
+import { fmtDate, daysBetween, plural, localDay, DEPARTMENTS, currentHealth, isActiveProject, startFilter, filterBoard, MINE_HELP, readyToClose, READY_HELP } from "../lib.js";
 import { Avatars, Swatch, StatusPill, StatusSelect, HealthBadge, AskAnswer, Legend } from "./common.jsx";
 import ProjectDialog from "./ProjectDialog.jsx";
 
@@ -85,7 +85,7 @@ export default function ProjectsView({ data, access, perms, onChanged, onError, 
   const groups = GROUPS.map(g => ({ name: g, items: projects.filter(p => (p.department || NO_DEPT) === g) })).filter(g => g.items.length);
 
   // Leads: this week's check-ins still to do
-  const due = perms.myPerson ? live.filter(p => isActive(p) && p.lead_ids.includes(perms.myPerson) && !p.checkin_this_week) : [];
+  const due = perms.myPerson ? live.filter(p => isActive(p) && !readyToClose(p) && p.lead_ids.includes(perms.myPerson) && !p.checkin_this_week) : [];
 
   const setStatus = async (t, status) => {
     const r = await updateTask(t.id, { status });
@@ -198,6 +198,7 @@ function ProjectRow({ p, tasks, open, onToggle, byDue, matchTask, personName, to
   const ck = p.latest_checkin;
   const health = currentHealth(p);
   const active = isActive(p);
+  const ready = readyToClose(p);
   const openAsk = ck?.ask && !ck.answer && ck.age_days <= 13;
   const due = p.target_date
     ? (p.past_target
@@ -206,17 +207,18 @@ function ProjectRow({ p, tasks, open, onToggle, byDue, matchTask, personName, to
     : <span>No target date</span>;
 
   return (
-    <article id={`p-${p.id}`} className={`proj${open ? " open" : ""}`} style={{ "--pc": p.color }}>
+    <article id={`p-${p.id}`} className={`proj${open ? " open" : ""}${p.stage === "Done" ? " closed" : ""}`} style={{ "--pc": p.color }}>
       <button className="phead" aria-expanded={open} aria-controls={`b-${p.id}`} onClick={onToggle}>
         <div className="ptitle">
           <div className="row1">
             <Swatch color={p.color} />
             <span className="pname">{p.name}</span>
             {!active && <StatusPill status={p.stage} />}
-            {p.priority && (p.priority === "High" || p.priority === "Urgent") &&
+            {ready && <span className="tag ok" title={READY_HELP}>All tasks done · ready to close</span>}
+            {active && !ready && (p.priority === "High" || p.priority === "Urgent") &&
               <span className={`prio${p.priority === "Urgent" ? " urgent" : ""}`}>{p.priority} priority</span>}
             {openAsk && <span className="tag" title={ck.ask}>Ask for Matt</span>}
-            {iLead && active && !p.checkin_this_week && <span className="tag warn">Check-in due</span>}
+            {iLead && active && !ready && !p.checkin_this_week && <span className="tag warn">Check-in due</span>}
           </div>
           <div className="meta">
             <span>{p.lead_names.length > 1 ? "Leads" : "Lead"}: <b>{p.lead_name || "none"}</b></span>

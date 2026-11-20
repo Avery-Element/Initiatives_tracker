@@ -90,3 +90,8 @@ export function filterBoard({ projects, tasksByProject, filter, personId }) {
   });
   return { projects: shown, matchTask };
 }
+
+// Ready to close: an open project whose tasks are all Done (and it has at least one). It stays on
+// the board, flagged, until someone sets its stage to Done or archives it.
+export const readyToClose = (p) => isActiveProject(p) && p.task_count > 0 && p.done_count === p.task_count;
+export const READY_HELP = 'Every task is Done. Go over it with Matt, then set the stage to Done or archive it.';
