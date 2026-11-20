@@ -65,7 +65,7 @@ the rules hold no matter what calls the API.
 
 1. **Projects:** summary tiles, then one row per project (swatch, name, stage, lead, team, "N
    updated this week", progress bar, target date). Click a row to expand it into its tasks. Change
-   a task's status from its dropdown. Filters: All / Needs attention / My tasks / person.
+   a task's status from its dropdown. Filters: All / Needs attention / Mine / person (Members open on Mine; the last chip is remembered).
 2. **Task panel:** opens from a task. Status, blocked on, due date, assignees, also involved,
    and the activity timeline, with a box to add a note.
 3. **People:** one card per person: % of open tasks moved this week, open / blocked / done,

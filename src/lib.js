@@ -60,3 +60,33 @@ export const HEALTH_HELP = {
 };
 // A project's current health: its latest check-in, if it's from this week or last
 export const currentHealth = (p) => (p.latest_checkin && p.latest_checkin.age_days <= 13 ? p.latest_checkin.health : null);
+
+// A project still in play: not Done, not Parked
+export const isActiveProject = (p) => p.stage !== 'Done' && p.stage !== 'Parked';
+
+// Projects screen chips. "Mine" = projects you lead, are a stakeholder on, or have a task on (see GLOSSARY.md).
+export const FILTERS = ['all', 'attention', 'mine'];
+export const MINE_HELP = 'Projects you lead, are a stakeholder on, or have a task on';
+
+// The chip the Projects screen opens on. A saved choice wins; Members with a linked person otherwise
+// start on Mine, everyone else on All. A person picked on the People screen always shows on All.
+export function startFilter({ saved, isMember, hasPerson, personPicked }) {
+  if (personPicked) return 'all';
+  if (FILTERS.includes(saved) && (saved !== 'mine' || hasPerson)) return saved;
+  return isMember && hasPerson ? 'mine' : 'all';
+}
+
+// Which projects show under a chip (and an optional person), and which of their tasks match.
+// `personId` is the person whose work to show: yours for Mine, the dropdown's pick otherwise.
+export function filterBoard({ projects, tasksByProject, filter, personId }) {
+  const matchTask = (t) =>
+    (!personId || t.assignee_ids.includes(personId)) &&
+    (filter !== 'attention' || t.status === 'Blocked' || t.overdue);
+  const shown = projects.filter(p => {
+    if (filter === 'all' && !personId) return true;
+    if (personId && (p.lead_ids.includes(personId) || p.stakeholder_ids.includes(personId)) && filter !== 'attention') return true;
+    if (filter === 'attention' && !personId && (p.past_target || (isActiveProject(p) && currentHealth(p) === 'Off track'))) return true;
+    return (tasksByProject.get(p.id) || []).some(matchTask);
+  });
+  return { projects: shown, matchTask };
+}

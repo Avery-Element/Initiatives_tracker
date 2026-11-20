@@ -3,13 +3,14 @@
 // tasks; change a task's status right from the list.
 import { useState, useMemo, useEffect, useRef } from "react";
 import { addTask, updateTask, setAssignees } from "../supabase.js";
-import { fmtDate, daysBetween, plural, localDay, DEPARTMENTS, currentHealth } from "../lib.js";
+import { fmtDate, daysBetween, plural, localDay, DEPARTMENTS, currentHealth, isActiveProject, startFilter, filterBoard, MINE_HELP } from "../lib.js";
 import { Avatars, Swatch, StatusPill, StatusSelect, HealthBadge, AskAnswer, Legend } from "./common.jsx";
 import ProjectDialog from "./ProjectDialog.jsx";
 
 const OPEN_KEY = "initiatives-open-projects";
 const DEPT_KEY = "initiatives-dept-filter";
 const SHUT_KEY = "initiatives-collapsed-depts";
+const FILTER_KEY = "initiatives-filter";          // last chip picked: all | attention | mine
 const loadSet = (k) => { try { return new Set(JSON.parse(localStorage.getItem(k) || "[]")); } catch { return new Set(); } };
 const saveSet = (k, s) => { try { localStorage.setItem(k, JSON.stringify([...s])); } catch { /* storage blocked */ } };
 const loadStr = (k) => { try { return localStorage.getItem(k) || ""; } catch { return ""; } };
@@ -26,19 +27,21 @@ const PROJECT_SORTS = {
   priority: (a, b) => doneLast(a) - doneLast(b) || prioRank(a) - prioRank(b),
   due: (a, b) => doneLast(a) - doneLast(b) || byDate(a.target_date, b.target_date) || prioRank(a) - prioRank(b),
 };
-const isActive = (p) => p.stage !== "Done" && p.stage !== "Parked";
+const isActive = isActiveProject;
 
 export default function ProjectsView({ data, access, perms, onChanged, onError, notify, openTask, personFilter, setPersonFilter,
                                        openCheckin, focusProject, setFocusProject }) {
   const [open, setOpen] = useState(() => loadSet(OPEN_KEY));
   const [shut, setShut] = useState(() => loadSet(SHUT_KEY));        // collapsed department groups
   const [dept, setDeptRaw] = useState(() => loadStr(DEPT_KEY));     // "" = all departments
-  const [filter, setFilterRaw] = useState("all");                   // all | attention | mine
+  const [filter, setFilterRaw] = useState(() => startFilter({       // all | attention | mine
+    saved: loadStr(FILTER_KEY), isMember: perms.canWrite && !perms.isAdmin, hasPerson: !!perms.myPerson, personPicked: !!personFilter }));
   const [attnClosed, setAttnClosed] = useState(() => new Set());    // cards collapsed while "Needs attention" opens them all
   const [editing, setEditing] = useState(null);                     // project, or {} for new
   const [sort, setSort] = useState("priority");                     // priority | due
   const today = access.today;
   const setFilter = (f) => { setFilterRaw(f); setAttnClosed(new Set()); };
+  const pickFilter = (f) => { setFilter(f); saveStr(FILTER_KEY, f); };   // a chip click is remembered; deep links are not
   const setDept = (d) => { setDeptRaw(d); saveStr(DEPT_KEY, d); };
 
   const toggle = (id) => setOpen(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); saveSet(OPEN_KEY, s); return s; });
@@ -74,15 +77,11 @@ export default function ProjectsView({ data, access, perms, onChanged, onError, 
 
   const live = data.projects.filter(p => !p.archived_at);
   const personId = filter === "mine" ? perms.myPerson : personFilter || null;
-  const matchTask = (t) =>
-    (!personId || t.assignee_ids.includes(personId)) &&
-    (filter !== "attention" || t.status === "Blocked" || t.overdue);
-  const projects = live.filter(p => !dept || (p.department || NO_DEPT) === dept).filter(p => {
-    if (filter === "all" && !personId) return true;
-    if (personId && (p.lead_ids.includes(personId) || p.stakeholder_ids.includes(personId)) && filter !== "attention") return true;
-    if (filter === "attention" && !personId && (p.past_target || (isActive(p) && currentHealth(p) === "Off track"))) return true;
-    return (tasksByProject.get(p.id) || []).some(matchTask);
-  }).sort(PROJECT_SORTS[sort]);
+  const board = filterBoard({ projects: live.filter(p => !dept || (p.department || NO_DEPT) === dept), tasksByProject, filter, personId });
+  const matchTask = board.matchTask;
+  const projects = board.projects.sort(PROJECT_SORTS[sort]);
+  // Mine is empty everywhere, not just in the chosen department
+  const nothingMine = filter === "mine" && projects.length === 0 && (!dept || filterBoard({ projects: live, tasksByProject, filter, personId }).projects.length === 0);
   const groups = GROUPS.map(g => ({ name: g, items: projects.filter(p => (p.department || NO_DEPT) === g) })).filter(g => g.items.length);
 
   // Leads: this week's check-ins still to do
@@ -111,10 +110,10 @@ export default function ProjectsView({ data, access, perms, onChanged, onError, 
     <>
       <div className="toolbar">
         <h2>Projects</h2>
-        <button className="chip" aria-pressed={filter === "all"} onClick={() => setFilter("all")}>All</button>
-        <button className="chip" aria-pressed={filter === "attention"} onClick={() => setFilter("attention")}
+        <button className="chip" aria-pressed={filter === "all"} onClick={() => pickFilter("all")}>All</button>
+        <button className="chip" aria-pressed={filter === "attention"} onClick={() => pickFilter("attention")}
           title="Blocked or overdue tasks, projects past their target date, and projects marked Off track">Needs attention</button>
-        {perms.myPerson && <button className="chip" aria-pressed={filter === "mine"} onClick={() => { setFilter("mine"); setPersonFilter(""); }}>My tasks</button>}
+        {perms.myPerson && <button className="chip" aria-pressed={filter === "mine"} title={MINE_HELP} onClick={() => { pickFilter("mine"); setPersonFilter(""); }}>Mine</button>}
         <select className="sel" aria-label="Filter by person" value={filter === "mine" ? "" : personFilter}
           onChange={e => { setPersonFilter(e.target.value); if (filter === "mine") setFilter("all"); }}>
           <option value="">Everyone</option>
@@ -151,7 +150,10 @@ export default function ProjectsView({ data, access, perms, onChanged, onError, 
         <div className="empty">
           {data.projects.length === 0
             ? (perms.isAdmin ? <>No projects yet. Use <b>New project</b> to add the first one.</> : "No projects yet.")
-            : "Nothing matches this filter."}
+            : nothingMine
+              ? <><b>You're not currently assigned to any tasks or projects.</b> Switch to{" "}
+                  <button className="btn ghost sm" onClick={() => pickFilter("all")}>All</button> to see everything.</>
+              : "Nothing matches this filter."}
         </div>
       ) : (
         <div className="plist">
