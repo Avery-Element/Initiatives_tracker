@@ -45,7 +45,7 @@ export function Bar({ done = 0, inProgress = 0, blocked = 0, total = 0, label })
 export const Legend = () => (
   <div className="legend">
     <span title={HEALTH_HELP["On track"]}><i style={{ background: "var(--s-done)" }} />On track</span>
-    <span title={HEALTH_HELP["At risk"]}><i style={{ background: "var(--s-park)" }} />At risk</span>
+    <span title={HEALTH_HELP["At risk"]}><i style={{ background: "var(--s-risk)" }} />At risk</span>
     <span title={HEALTH_HELP["Off track"]}><i style={{ background: "var(--s-block)" }} />Off track</span>
     <span title={HEALTH_HELP["No check-in"]}><i style={{ background: "var(--sunk)", outline: "1px solid var(--line-2)" }} />No check-in in 2 weeks</span>
     <span className="legend-note">Health comes from each lead's weekly check-in.</span>

@@ -2,7 +2,8 @@
 // The rest of this app is styled with classes in index.css.
 /* eslint-disable react-refresh/only-export-components */
 
-export const P = "#2F7D2D", DG = "#D63B2F", SG = "#0E8A6C";
+// DG / SG follow the theme so sign-in messages stay readable in dark mode
+export const P = "#2F7D2D", DG = "var(--s-block)", SG = "var(--s-done)";
 export const BDRS = "1px solid var(--line-2)";
 
 export function Inp({ value, onChange, type = "text", disabled = false, style = {}, placeholder, autoFocus, required }) {

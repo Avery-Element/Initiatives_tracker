@@ -95,3 +95,16 @@ export function filterBoard({ projects, tasksByProject, filter, personId }) {
 // the board, flagged, until someone sets its stage to Done or archives it.
 export const readyToClose = (p) => isActiveProject(p) && p.task_count > 0 && p.done_count === p.task_count;
 export const READY_HELP = 'Every task is Done. Go over it with Matt, then set the stage to Done or archive it.';
+
+// Gone quiet: an active project with open tasks and no task activity (status change, note, "waiting
+// on") for two weeks, the same two weeks the digest uses for "not heard from". Returns the day it
+// last moved (YYYY-MM-DD), or null. Only these get the amber warning on the board; a project that
+// is simply new, empty, or hasn't moved yet this week is not a warning.
+export const QUIET_DAYS = 14;
+export function quietSince(p, today) {
+  if (!isActiveProject(p) || p.task_count - p.done_count <= 0) return null;
+  const since = p.last_activity_at || p.created_at;
+  if (!since) return null;
+  const day = localDay(since);
+  return daysBetween(day, today) >= QUIET_DAYS ? day : null;
+}

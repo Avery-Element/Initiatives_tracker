@@ -6,7 +6,7 @@ by email; everyone with open tasks gets a "Your week" email.
 
 Runs on the same Supabase project as Stanley, Shipping, Maintenance and Remnant Rack, and shares
 their logins. Same stack: Vite + React (plain JS), one `src/supabase.js` module, Cloudflare Worker
-hosting. Design: Element green header, shaded summary tiles, a swatch color per project
+hosting. Design: Element green header, a two-sentence week summary on Projects, a muted swatch per project
 (`src/index.css`). The plan and the reasoning behind it are in [docs/PLAN.md](docs/PLAN.md).
 
 ## Roles
@@ -133,7 +133,7 @@ supabase/seed/                starting data
 supabase/functions/init-email Edge Function (index.ts) + email templates (render.ts)
 src/supabase.js               every database call
 src/auth.jsx                  sign-in screens (same behaviour as the other Element apps)
-src/App.jsx                   shell, summary tiles, tabs, permission helpers
+src/App.jsx                   shell, tabs, permission helpers
 src/views/                    Projects, task panel, People, Weekly digest, Admin
 tests/                        database + email tests
 ```

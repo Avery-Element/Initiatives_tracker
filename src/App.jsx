@@ -5,7 +5,6 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { supabase, loginName, fetchMyAccess, logSignIn, fetchProjects, fetchTasks, fetchPeople,
          fetchAssignable, subscribeToChanges } from "./supabase.js";
 import { LoginPage, SetPasswordForm, NoAccessPage } from "./auth.jsx";
-import { fmtDate, plural, currentHealth } from "./lib.js";
 import ProjectsView from "./views/ProjectsView.jsx";
 import PeopleView from "./views/PeopleView.jsx";
 import DigestView from "./views/DigestView.jsx";
@@ -148,14 +147,6 @@ export default function App() {
   if (!data) return error ? <div className="loading">{error}</div> : loadingScreen;
 
   const live = data.projects.filter(p => !p.archived_at);
-  const liveIds = new Set(live.map(p => p.id));
-  const tasks = data.tasks.filter(t => liveIds.has(t.project_id));
-  const active = live.filter(p => p.stage !== "Done" && p.stage !== "Parked");
-  const health = (h) => active.filter(p => currentHealth(p) === h).length;
-  const blocked = tasks.filter(t => t.status === "Blocked").length;
-  const overdue = tasks.filter(t => t.overdue).length;
-  const moved = tasks.filter(t => t.moved_this_week).length;
-  const checkedIn = active.filter(p => p.checkin_this_week).length;
   const openTask = openTaskId && data.tasks.find(t => t.id === openTaskId);
   const checkinProject = checkinFor && live.find(p => p.id === checkinFor);
   const viewProps = { data, access, perms, onChanged: reload, onError: setError, notify, openTask: setOpenTaskId,
@@ -182,17 +173,6 @@ export default function App() {
         {canWrite && !myPerson && (
           <div className="banner info"><span>Your login isn't linked to a person yet, so no tasks show as yours. Ask an Initiatives Admin to link it under Admin → People.</span></div>
         )}
-
-        <section className="summary" aria-label="Summary">
-          <div className="stat c1" title="Projects that aren't Done or Parked"><span className="k">Active projects</span><span className="v">{active.length}</span>
-            <span className="d">{plural(live.filter(p => p.past_target).length, "past target date", "past target date")}</span></div>
-          <div className="stat c2" title="From each lead's latest check-in (this week or last)"><span className="k">On track</span><span className="v">{health("On track")} <small>of {active.length}</small></span>
-            <span className="d">{health("At risk")} at risk · {health("Off track")} off track</span></div>
-          <div className="stat c3" title="Blocked tasks, plus open tasks past their due date"><span className="k">Needs attention</span><span className="v">{blocked + overdue}</span>
-            <span className="d">{blocked} blocked · {overdue} past due</span></div>
-          <div className="stat c4" title="Active projects whose lead has checked in since Monday"><span className="k">Check-ins this week</span><span className="v">{checkedIn} <small>of {active.length}</small></span>
-            <span className="d">Since {fmtDate(access.week_start)} · {plural(moved, "task")} updated</span></div>
-        </section>
 
         {tab === "projects" && <ProjectsView {...viewProps} />}
         {tab === "people" && <PeopleView {...viewProps} />}
