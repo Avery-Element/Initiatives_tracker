@@ -172,7 +172,7 @@ export default function ProjectsView({ data, access, perms, onChanged, onError, 
                   <span className="n">{plural(g.items.length, "project")}</span>
                   <span className="tally" aria-label={`${tally("On track")} on track, ${tally("At risk")} at risk, ${tally("Off track")} off track`}>
                     <span><i style={{ background: "var(--s-done)" }} />{tally("On track")}</span>
-                    <span><i style={{ background: "var(--s-park)" }} />{tally("At risk")}</span>
+                    <span><i style={{ background: "var(--s-risk)" }} />{tally("At risk")}</span>
                     <span><i style={{ background: "var(--s-block)" }} />{tally("Off track")}</span>
                   </span>
                 </button>

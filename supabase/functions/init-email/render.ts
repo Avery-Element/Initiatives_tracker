@@ -9,8 +9,8 @@ export type Rendered = { html: string; text: string };
 
 const GREEN = '#2F7D2D', BRAND = '#66BD64', HEADER = '#DDEFDB', INK = '#152018', INK2 = '#465449', LINE = '#DCE3DA';
 const STATUS: Record<string, [string, string]> = {
-  'Done': ['#0E8A6C', '#D8F3EA'], 'In progress': ['#3A5FD9', '#E3E9FD'], 'Blocked': ['#D63B2F', '#FDE4E1'],
-  'Parked': ['#B87400', '#FCEFD6'], 'Not started': ['#465449', '#EBEFEA'],
+  'Done': ['#0A6F57', '#D8F3EA'], 'In progress': ['#3354C4', '#E3E9FD'], 'Blocked': ['#B8291F', '#FDE4E1'],
+  'Parked': ['#525D75', '#E6E9F0'], 'Not started': ['#465449', '#EBEFEA'],
 };
 
 export const esc = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, c =>
@@ -33,7 +33,7 @@ const pill = (status: string) => {
 };
 const who = (names?: string[]) => (names && names.length ? names.join(', ') : 'unassigned');
 const h2 = (t: string) =>
-  `<tr><td style="padding:22px 28px 6px;font:600 12px/1.4 Arial,sans-serif;letter-spacing:.06em;text-transform:uppercase;color:${INK2}">${esc(t)}</td></tr>`;
+  `<tr><td style="padding:22px 28px 6px;font:700 15px/1.4 Arial,sans-serif;color:${INK}">${esc(t)}</td></tr>`;
 const row = (inner: string) => `<tr><td style="padding:4px 28px;font:14px/1.5 Arial,sans-serif;color:${INK}">${inner}</td></tr>`;
 const muted = (t: string) => `<span style="color:${INK2}">${t}</span>`;
 const button = (url: string | null | undefined, label: string) => url
@@ -59,7 +59,7 @@ const link = (base: string | null | undefined, hash: string) =>
   (base ? `${String(base).replace(/#.*$/, '').replace(/\/$/, '')}/#${hash}` : null);
 const a = (url: string | null, label: string) => url ? `<a href="${esc(url)}" style="color:${GREEN};text-decoration:none">${label}</a>` : label;
 const HEALTH: Record<string, [string, string]> = {
-  'On track': ['#0E8A6C', '#D8F3EA'], 'At risk': ['#B87400', '#FCEFD6'], 'Off track': ['#D63B2F', '#FDE4E1'],
+  'On track': ['#0A6F57', '#D8F3EA'], 'At risk': ['#8A5300', '#FCEFD6'], 'Off track': ['#B8291F', '#FDE4E1'],
 };
 const healthPill = (h?: string | null) => {
   const [fg, bg] = (h && HEALTH[h]) || ['#465449', '#EBEFEA'];
@@ -137,7 +137,7 @@ export function renderDigest(p: Json): Rendered {
         body += row(`<div style="padding-top:10px;font:600 13px Arial,sans-serif;color:${INK2}">${esc(d)}</div>`);
         text.push(`${d}:`);
       }
-      const when = x.days_late ? `<span style="color:#D63B2F">${x.days_late} days past target</span>`
+      const when = x.days_late ? `<span style="color:#B8291F">${x.days_late} days past target</span>`
         : x.target_date ? muted(`target ${fmtDate(x.target_date)}`) : '';
       const stale = x.health && !x.checkin_current ? muted(' (last week)') : '';
       const showSummary = x.summary && x.stage !== 'Done';
@@ -156,7 +156,7 @@ export function renderDigest(p: Json): Rendered {
     for (const b of p.blocked) {
       const on = b.waiting_on || b.blocked_on || 'not specified';
       body += row(`${swatch(b.color)}${a(link(p.app_url, `task/${b.task_id}`), esc(b.title))} ${muted(`· ${esc(b.project)} · ${esc(who(b.who))}`)}<br>
-        <span style="padding-left:16px;color:#D63B2F">Waiting on ${esc(on)}</span> ${muted(`since ${fmtDate(b.since)}`)}`);
+        <span style="padding-left:16px;color:#B8291F">Waiting on ${esc(on)}</span> ${muted(`since ${fmtDate(b.since)}`)}`);
       text.push(`- ${b.project}: ${b.title} — waiting on ${on} since ${fmtDate(b.since)}`);
     }
   }
@@ -184,7 +184,7 @@ export function renderDigest(p: Json): Rendered {
     const td = (v: string, right = false, color = INK) => `<td style="padding:6px 8px;font:14px Arial,sans-serif;color:${color};border-bottom:1px solid ${LINE};text-align:${right ? 'right' : 'left'}">${v}</td>`;
     body += `<tr><td style="padding:4px 28px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0">
       <tr>${th('Person')}${th('Open', true)}${th('Blocked', true)}${th('Done this week', true)}${th('Last update', true)}</tr>
-      ${p.people.map((x: Json) => `<tr>${td(esc(x.name))}${td(String(x.open), true)}${td(String(x.blocked), true, x.blocked ? '#D63B2F' : INK)}${
+      ${p.people.map((x: Json) => `<tr>${td(esc(x.name))}${td(String(x.open), true)}${td(String(x.blocked), true, x.blocked ? '#B8291F' : INK)}${
         td(String(x.done_week), true)}${td(x.last_update ? fmtDate(x.last_update) : '—', true, INK2)}</tr>`).join('')}
     </table></td></tr>`;
     for (const x of p.people) text.push(`- ${x.name}: ${x.open} open · ${x.blocked} blocked · ${x.done_week} done`);
@@ -224,7 +224,7 @@ export function renderReminder(p: Json): Rendered {
     }
   }
   const taskRow = (t: Json) => {
-    const why = t.overdue ? `<span style="color:#D63B2F;font-weight:600">due ${fmtDate(t.due_date)}</span>`
+    const why = t.overdue ? `<span style="color:#B8291F;font-weight:600">due ${fmtDate(t.due_date)}</span>`
       : t.needs_update ? muted(t.last_at ? `no update in ${t.days_quiet} days` : 'never updated')
       : t.due_date ? muted(`due ${fmtDate(t.due_date)}`) : '';
     return row(`<div style="padding:6px 0;border-bottom:1px solid ${LINE}">${swatch(t.color)}${a(link(p.app_url, `task/${t.task_id}`), `<b style="color:${INK}">${esc(t.title)}</b>`)}<br>
