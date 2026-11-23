@@ -6,13 +6,17 @@ export const PRIORITIES = ['Low', 'Medium', 'High', 'Urgent'];
 export const slug = (s) => String(s || 'Not started').toLowerCase().replace(/\s+/g, '_');
 
 // Departments, in sort order. A project's color comes from its department.
-// The names must match the check on init_projects.department (migration 006).
+// The names must match the check on init_projects.department, and the order init_dept_rank
+// (both last set in migration 009).
 export const DEPARTMENTS = [
   { name: 'Design', color: '#D9488F' },              // pink
   { name: 'Office', color: '#3B7DD8' },              // blue
   { name: 'General', color: '#7A4FD0' },             // purple
   { name: 'Warehouse/Shipping', color: '#E8B21E' },  // yellow
   { name: 'Production', color: '#2F9E5B' },          // green
+  { name: 'Accounting', color: '#139A9E' },          // teal
+  { name: 'Operations', color: '#E8702A' },          // orange
+  { name: 'Upholstery', color: '#8C5A3C' },          // brown
 ];
 export const deptColor = (name) => DEPARTMENTS.find(d => d.name === name)?.color;
 
