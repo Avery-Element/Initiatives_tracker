@@ -3,7 +3,7 @@
 // tasks; change a task's status right from the list.
 import { useState, useMemo, useEffect, useRef } from "react";
 import { addTask, updateTask, setAssignees } from "../supabase.js";
-import { fmtDate, daysBetween, plural, localDay, DEPARTMENTS, currentHealth, isActiveProject, startFilter, filterBoard, MINE_HELP, readyToClose, READY_HELP } from "../lib.js";
+import { fmtDate, daysBetween, plural, localDay, DEPARTMENTS, currentHealth, isActiveProject, startFilter, filterBoard, MINE_HELP, readyToClose, READY_HELP, quietSince } from "../lib.js";
 import { Avatars, Swatch, StatusPill, StatusSelect, HealthBadge, AskAnswer, Legend } from "./common.jsx";
 import ProjectDialog from "./ProjectDialog.jsx";
 
@@ -106,8 +106,11 @@ export default function ProjectsView({ data, access, perms, onChanged, onError, 
     );
   };
 
+  const liveIds = new Set(live.map(p => p.id));
   return (
     <>
+      <WeekLine live={live} tasks={data.tasks.filter(t => liveIds.has(t.project_id))} weekStart={access.week_start}
+        onAttention={filter === "attention" && !personFilter ? null : () => { pickFilter("attention"); setPersonFilter(""); }} />
       <div className="toolbar">
         <h2>Projects</h2>
         <button className="chip" aria-pressed={filter === "all"} onClick={() => pickFilter("all")}>All</button>
@@ -125,7 +128,6 @@ export default function ProjectsView({ data, access, perms, onChanged, onError, 
         </select>
         {perms.isAdmin && <button className="btn" onClick={() => setEditing({})}>New project</button>}
       </div>
-      <p className="intro">Every internal initiative, grouped by department. Health comes from each lead's weekly check-in; open a project for its tasks.</p>
 
       <div className="deptbar" role="group" aria-label="Department">
         <button className="chip" aria-pressed={!dept} onClick={() => setDept("")}>All departments</button>
@@ -188,6 +190,39 @@ export default function ProjectsView({ data, access, perms, onChanged, onError, 
   );
 }
 
+// The week at a glance, in two sentences: health from the leads' check-ins, how many have checked in
+// so far, and what needs attention (which opens the Needs attention filter).
+function WeekLine({ live, tasks, weekStart, onAttention }) {
+  const active = live.filter(isActive);
+  const n = active.length;
+  if (!n) return null;
+  const count = (h) => active.filter(p => currentHealth(p) === h).length;
+  const on = count("On track"), risk = count("At risk"), off = count("Off track");
+  const none = n - on - risk - off;
+  const checkedIn = active.filter(p => p.checkin_this_week).length;
+  const blocked = tasks.filter(t => t.status === "Blocked").length;
+  const overdue = tasks.filter(t => t.overdue).length;
+  const late = live.filter(p => p.past_target).length;
+  const attention = blocked + overdue;
+  const num = (v, cls) => <b className={`wn${v ? " " + cls : ""}`}>{v}</b>;
+  const attnText = plural(attention, "task needs", "tasks need") + " attention";
+  return (
+    <section className="week" aria-label="This week">
+      <p className="week-h">
+        {plural(n, "active project")}:{" "}
+        {none === n ? "none with a check-in in the last two weeks."
+          : <>{num(on, "on")} on track, {num(risk, "risk")} at risk, {num(off, "off")} off track{none ? `, ${none} with no recent check-in` : ""}.</>}
+      </p>
+      <p className="week-s">
+        {checkedIn ? `${checkedIn} of ${n} checked in` : "No check-ins yet"} since {fmtDate(weekStart)}.{" "}
+        {attention ? <>{onAttention ? <button className="linkbtn" onClick={onAttention}>{attnText}</button> : attnText}
+          {" "}({[blocked && `${blocked} blocked`, overdue && `${overdue} past due`].filter(Boolean).join(", ")}).</> : "Nothing blocked or past due."}
+        {late ? ` ${plural(late, "project")} past ${late === 1 ? "its" : "their"} target date.` : ""}
+      </p>
+    </section>
+  );
+}
+
 function ProjectRow({ p, tasks, open, onToggle, byDue, matchTask, personName, today, perms, people, onStatus, openTask, onEdit, onCheckin, onChanged, onError, notify }) {
   // Overdue tasks first (earliest due date on top). Sorted by target date, the rest follow by due
   // date too (no date last); otherwise they keep their list order.
@@ -200,6 +235,7 @@ function ProjectRow({ p, tasks, open, onToggle, byDue, matchTask, personName, to
   const active = isActive(p);
   const ready = readyToClose(p);
   const openAsk = ck?.ask && !ck.answer && ck.age_days <= 13;
+  const quiet = quietSince(p, today);
   const due = p.target_date
     ? (p.past_target
         ? <><span className="late">{plural(-p.days_to_target, "day")} past target</span><span>Target {fmtDate(p.target_date)}</span></>
@@ -213,12 +249,11 @@ function ProjectRow({ p, tasks, open, onToggle, byDue, matchTask, personName, to
           <div className="row1">
             <Swatch color={p.color} />
             <span className="pname">{p.name}</span>
-            {!active && <StatusPill status={p.stage} />}
-            {ready && <span className="tag ok" title={READY_HELP}>All tasks done · ready to close</span>}
+            {ready && <span className="flag ok" title={READY_HELP}>All tasks done, ready to close</span>}
             {active && !ready && (p.priority === "High" || p.priority === "Urgent") &&
-              <span className={`prio${p.priority === "Urgent" ? " urgent" : ""}`}>{p.priority} priority</span>}
-            {openAsk && <span className="tag" title={ck.ask}>Ask for Matt</span>}
-            {iLead && active && !ready && !p.checkin_this_week && <span className="tag warn">Check-in due</span>}
+              <span className={`flag${p.priority === "Urgent" ? " urgent" : ""}`}>{p.priority} priority</span>}
+            {openAsk && <span className="flag ask" title={ck.ask}>Ask for Matt</span>}
+            {iLead && active && !ready && !p.checkin_this_week && <span className="flag">Check-in due</span>}
           </div>
           <div className="meta">
             <span>{p.lead_names.length > 1 ? "Leads" : "Lead"}: <b>{p.lead_name || "none"}</b></span>
@@ -227,13 +262,13 @@ function ProjectRow({ p, tasks, open, onToggle, byDue, matchTask, personName, to
                 ? `${p.stakeholder_names.slice(0, 3).join(", ")} +${p.stakeholder_names.length - 3}` : p.stakeholder_names.join(", ")}</b></span>}
             <Avatars names={p.team_names || []} />
             {personName && <span className="wk"><b>{plural(shown.length, "task")}</b> for {personName}</span>}
-            <span className={`wk${p.moved_this_week || !active ? "" : " zero"}`}>
-              {p.moved_this_week ? `${p.moved_this_week} updated this week` : p.task_count ? "No task updates this week" : "No tasks yet"}
+            <span className={`wk${quiet ? " zero" : ""}`}>
+              {p.moved_this_week ? `${p.moved_this_week} updated this week` : quiet ? `Quiet since ${fmtDate(quiet)}` : p.task_count ? "No updates this week" : "No tasks yet"}
             </span>
           </div>
         </div>
         <div className="prog hlth">
-          {active && <span><HealthBadge health={health} /></span>}
+          {active ? <span><HealthBadge health={health} /></span> : <span><StatusPill status={p.stage} /></span>}
           {active && health && <span className="sumline" title={ck.summary}>{ck.summary}</span>}
           {active && ck && !health && <span className="old">Last check-in {fmtDate(ck.week_start)}</span>}
           <span className="lbl">{p.done_count} of {plural(p.task_count, "task")} done{p.blocked_count ? ` · ${p.blocked_count} blocked` : ""}</span>

@@ -1,6 +1,6 @@
 // Projects screen filter rules in src/lib.js (pure functions, no browser).
 //   npm run test:ui
-import { startFilter, filterBoard, readyToClose } from '../../src/lib.js';
+import { startFilter, filterBoard, readyToClose, quietSince } from '../../src/lib.js';
 
 let pass = 0, fail = 0;
 const ok = (c, msg) => { if (c) { pass++; console.log('  ok  ', msg); } else { fail++; console.log('  FAIL', msg); } };
@@ -59,6 +59,19 @@ ok(!readyToClose({ stage: 'In progress', task_count: 4, done_count: 3 }), 'a tas
 ok(!readyToClose({ stage: 'In progress', task_count: 0, done_count: 0 }), 'no tasks: not ready');
 ok(!readyToClose({ stage: 'Done', task_count: 4, done_count: 4 }), 'stage already Done: not flagged');
 ok(!readyToClose({ stage: 'Parked', task_count: 2, done_count: 2 }), 'Parked: not flagged');
+
+console.log('quietSince');
+const TODAY = '2026-11-23';
+const q = (extra) => quietSince({ stage: 'In progress', task_count: 5, done_count: 1, created_at: '2026-10-01T17:00:00Z', ...extra }, TODAY);
+ok(q({ last_activity_at: '2026-11-06T18:00:00Z' }) === '2026-11-06', 'open tasks, last moved 17 days ago: quiet since then');
+ok(q({ last_activity_at: '2026-11-10T18:00:00Z' }) === null, 'moved 13 days ago: not quiet yet');
+ok(q({ last_activity_at: '2026-11-09T18:00:00Z' }) === '2026-11-09', 'exactly 14 days: quiet');
+ok(q({ last_activity_at: null }) === '2026-10-01', 'never moved: quiet since it was created');
+ok(q({ last_activity_at: null, created_at: '2026-11-20T17:00:00Z' }) === null, 'new project: not quiet');
+ok(q({ task_count: 0, done_count: 0 }) === null, 'no tasks yet: not a warning');
+ok(q({ task_count: 3, done_count: 3 }) === null, 'every task done: not quiet');
+ok(q({ stage: 'Parked' }) === null, 'Parked: not quiet');
+ok(q({ stage: 'Done' }) === null, 'Done: not quiet');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
