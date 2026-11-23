@@ -100,7 +100,8 @@ same result.
    **Send a test**. Check the outbox row says Sent.
 
 The function is deployed. To redeploy after changes:
-`npx supabase functions deploy init-email --project-ref rxibmtzsnlwxhapktkzt`
+`npx supabase functions deploy init-email --remote=rxibmtzsnlwxhapktkzt`
+(Run from Claude Code, the CLI asks for `--yes` to confirm a production deploy.)
 
 ### App
 

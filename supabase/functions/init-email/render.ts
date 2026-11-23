@@ -70,13 +70,20 @@ const s_ = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const names = (list: string[] = [], max = 5) =>
   list.length <= max ? list.join(', ') : `${list.slice(0, max).join(', ')} and ${list.length - max} more`;
 
+// The digest headline, as a sentence (the app's Weekly digest screen says the same)
+export const healthLine = (hl: Json) => {
+  const on = hl.on_track ?? 0, risk = hl.at_risk ?? 0, off = hl.off_track ?? 0, none = hl.no_checkin ?? 0;
+  if (!on && !risk && !off) return none ? `No check-ins in the last two weeks from ${s_(none, 'active project')}.` : 'No active projects.';
+  return `${on} on track, ${risk} at risk, ${off} off track${none ? `, ${none} without a check-in` : ''}.`;
+};
+
 // ── Weekly digest ─────────────────────────────────────────────────────────────
 // Order: note, asks for Matt, the three-line headline, how current the data is, projects by
 // department with health, then blocked / past target / candidates to park, and workload counts.
 export function renderDigest(p: Json): Rendered {
   const hl = p.headline || {}, dq = p.data_quality || {};
   const range = `${fmtDate(p.week_start)} – ${fmtDate(p.week_end)}`;
-  const title = `${hl.on_track ?? 0} on track · ${hl.at_risk ?? 0} at risk · ${hl.off_track ?? 0} off track`;
+  const title = healthLine(hl);
   const text: string[] = [`Element Initiatives: week of ${range}`, title, ''];
   let body = '';
 

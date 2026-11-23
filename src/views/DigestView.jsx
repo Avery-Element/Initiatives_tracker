@@ -75,7 +75,9 @@ export default function DigestView({ access, perms, onError, notify, onChanged, 
         <article className="digest">
           <div className="dhead">
             <span className="from">Week of {fmtDate(d.week_start)} – {fmtDate(d.week_end)}</span>
-            <h3>{hl.on_track} on track · {hl.at_risk} at risk · {hl.off_track} off track{hl.no_checkin ? ` · ${hl.no_checkin} without a check-in` : ""}</h3>
+            <h3>{hl.on_track || hl.at_risk || hl.off_track
+              ? <><b className={`wn${hl.on_track ? " on" : ""}`}>{hl.on_track}</b> on track, <b className={`wn${hl.at_risk ? " risk" : ""}`}>{hl.at_risk}</b> at risk, <b className={`wn${hl.off_track ? " off" : ""}`}>{hl.off_track}</b> off track{hl.no_checkin ? `, ${hl.no_checkin} without a check-in` : ""}.</>
+              : hl.no_checkin ? `No check-ins in the last two weeks from ${plural(hl.no_checkin, "active project")}.` : "No active projects."}</h3>
           </div>
 
           {(d.note || perms.isAdmin) && (

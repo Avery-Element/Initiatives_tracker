@@ -3,8 +3,13 @@
 /* eslint-disable react-refresh/only-export-components */
 
 // DG / SG follow the theme so sign-in messages stay readable in dark mode
-export const P = "#2F7D2D", DG = "var(--s-block)", SG = "var(--s-done)";
+export const P = "var(--accent)", DG = "var(--s-block)", SG = "var(--s-done)";
 export const BDRS = "1px solid var(--line-2)";
+
+// Top of every sign-in card: the same Element mark and wordmark as the app header
+export const AuthBrand = () => (
+  <div className="brand auth-brand"><span className="brand-mark" role="img" aria-label="Element" /><b>Element</b><span>Initiatives</span></div>
+);
 
 export function Inp({ value, onChange, type = "text", disabled = false, style = {}, placeholder, autoFocus, required }) {
   return <input type={type} value={value ?? ""} onChange={e => onChange(e.target.value)} disabled={disabled}
