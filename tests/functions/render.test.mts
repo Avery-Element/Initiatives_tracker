@@ -2,7 +2,7 @@
 //   npm run test:email
 // Set WRITE_SAMPLES=1 to also write tests/functions/samples/*.html for a visual check.
 import fs from 'node:fs';
-import { render, esc, fmtDate } from '../../supabase/functions/init-email/render.ts';
+import { render, esc, fmtDate, healthLine } from '../../supabase/functions/init-email/render.ts';
 
 let pass = 0, fail = 0;
 const ok = (c: unknown, msg: string) => { if (c) { pass++; console.log('  ok  ', msg); } else { fail++; console.log('  FAIL', msg); } };
@@ -40,7 +40,7 @@ const digest = {
 
 console.log('Digest');
 let r = render('digest', digest);
-ok(r.html.includes('Week of Oct 26 – Nov 1') && r.html.includes('3 on track · 1 at risk · 1 off track'), 'title, week range and health tally');
+ok(r.html.includes('Week of Oct 26 – Nov 1') && r.html.includes('3 on track, 1 at risk, 1 off track, 1 without a check-in.'), 'title, week range and health tally');
 ok(r.html.includes('Raise the Loft date') && r.html.includes('&lt;please&gt;'), 'admin note at the top, escaped');
 ok(r.html.indexOf('Raise the Loft') < r.html.indexOf('Asks for you (1)') && r.html.indexOf('Asks for you') < r.html.indexOf('This week'), 'note, then asks, then headline');
 ok(r.html.includes('Approve paying James for a rush') && r.html.includes(`href="${APP}/#project/p-loft"`) && r.html.includes("open 3 days"), 'open ask links to answer it');
@@ -90,6 +90,9 @@ ok(render('test', {}).text.includes('working'), 'test email');
 let threw = false; try { render('nope', {}); } catch { threw = true; }
 ok(threw, 'unknown kind throws (recorded as an error on the outbox row)');
 ok(esc(`<a href="x">'&`) === '&lt;a href=&quot;x&quot;&gt;&#39;&amp;' && fmtDate('2026-01-05') === 'Jan 5', 'helpers');
+ok(healthLine({ on_track: 2, at_risk: 0, off_track: 1 }) === '2 on track, 0 at risk, 1 off track.', 'headline: every project has a recent check-in');
+ok(healthLine({ no_checkin: 20 }) === 'No check-ins in the last two weeks from 20 active projects.', 'headline: nobody has checked in');
+ok(healthLine({}) === 'No active projects.', 'headline: no active projects');
 
 if (process.env.WRITE_SAMPLES) {
   const dir = new URL('./samples/', import.meta.url);

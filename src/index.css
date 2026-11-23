@@ -73,6 +73,11 @@ main.wrap { padding-top: 20px; }
 .tabs button[aria-selected="true"] { background: var(--hdr-sel); color: var(--hdr-sel-ink); box-shadow: 0 1px 2px rgb(0 0 0 / .08); }
 .me { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--hdr-2); }
 .me b { color: var(--hdr-ink); font-weight: 600; }
+/* sign-in cards (src/auth.jsx) */
+.auth-brand { margin: 0 0 22px; }
+.auth-brand b, .auth-brand span { color: var(--ink); }
+.auth-brand span { color: var(--ink-2); }
+.auth-h { font: 700 20px/1.25 var(--font-display); margin: 0 0 4px; text-wrap: balance; }
 .linkbtn { background: none; border: 0; padding: 0; color: inherit; text-decoration: underline; cursor: pointer; font-size: 13px; }
 
 /* ── banners ────────────────────────────────────────── */

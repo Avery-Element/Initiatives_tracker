@@ -4,7 +4,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import { useState } from "react";
 import { supabase, toLoginEmail, loginName, markPasswordChanged } from "./supabase.js";
-import { P, DG, SG, LF, Inp, centered, card, btn } from "./ui.jsx";
+import { P, DG, SG, LF, Inp, centered, card, btn, AuthBrand } from "./ui.jsx";
 
 export const MIN_PASSWORD = 8;
 
@@ -44,7 +44,8 @@ export function LoginPage({ onLogin, sessionExpired }) {
   if (showForgot) return (
     <div style={centered}>
       <div style={card}>
-        <h1 style={{ margin: "0 0 0.25rem", fontSize: 18, fontWeight: 500 }}>Reset password</h1>
+        <AuthBrand />
+        <h1 className="auth-h">Reset password</h1>
         <p style={{ margin: "0 0 1.5rem", fontSize: 12, color: "var(--color-text-secondary)" }}>
           Enter your email to receive a reset link. If you sign in with a username, ask a Manager to reset your password.
         </p>
@@ -58,14 +59,15 @@ export function LoginPage({ onLogin, sessionExpired }) {
     </div>
   );
 
-  const notice = (text) => <div style={{ marginBottom: 12, padding: "8px 12px", background: "#fff8e1", border: "1px solid #f0c040", borderRadius: "var(--border-radius-md)", fontSize: 12, color: "#7a5c00" }}>{text}</div>;
+  const notice = (text) => <div style={{ marginBottom: 12, padding: "8px 12px", background: "var(--s-risk-bg)", borderRadius: "var(--border-radius-md)", fontSize: 12.5, color: "var(--ink)" }}>{text}</div>;
 
   return (
     <div style={centered}>
       <div style={card}>
-        {sessionExpired && notice("Your session expired. Please log in again.")}
-        <h1 style={{ margin: "0 0 0.25rem", fontSize: 18, fontWeight: 500 }}>Initiatives</h1>
-        <p style={{ margin: "0 0 1.5rem", fontSize: 12, color: "var(--color-text-secondary)" }}>Sign in to continue</p>
+        <AuthBrand />
+        {sessionExpired && notice("Your session expired. Log in again to continue.")}
+        <h1 className="auth-h">Log in</h1>
+        <p style={{ margin: "0 0 1.5rem", fontSize: 13, color: "var(--color-text-secondary)" }}>Use the same login as Stanley, Shipping and Maintenance.</p>
         <form onSubmit={e => { e.preventDefault(); submit(); }} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <LF label="Username or email"><Inp value={email} onChange={setEmail} placeholder="jsmith or you@company.com" /></LF>
           <LF label="Password"><Inp value={password} onChange={setPassword} type="password" /></LF>
@@ -99,7 +101,8 @@ export function SetPasswordForm({ onDone, forced = false, onLogout }) {
   return (
     <div style={centered}>
       <div style={card}>
-        <h1 style={{ margin: "0 0 0.25rem", fontSize: 18, fontWeight: 500 }}>{forced ? "Choose your password" : "Set new password"}</h1>
+        <AuthBrand />
+        <h1 className="auth-h">{forced ? "Choose your password" : "Set new password"}</h1>
         <p style={{ margin: "0 0 1.5rem", fontSize: 12, color: "var(--color-text-secondary)" }}>
           {forced ? "You signed in with a temporary password. Choose a new one to continue." : "Enter and confirm your new password."}
         </p>
@@ -124,7 +127,8 @@ export function NoAccessPage({ access, onLogout, onRetry }) {
   return (
     <div style={centered}>
       <div style={{ ...card, width: 360 }}>
-        <h1 style={{ margin: "0 0 0.5rem", fontSize: 18, fontWeight: 500 }}>{title}</h1>
+        <AuthBrand />
+        <h1 className="auth-h">{title}</h1>
         <p style={{ margin: "0 0 1.5rem", fontSize: 13, color: "var(--color-text-secondary)", lineHeight: 1.5 }}>{body}</p>
         <div style={{ display: "flex", gap: 8 }}>
           {access?.error && <button onClick={onRetry} style={btn(false, { flex: 1 })}>Try again</button>}
